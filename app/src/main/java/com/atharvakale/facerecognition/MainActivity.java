@@ -56,6 +56,7 @@ import androidx.lifecycle.LifecycleOwner;
 
 import android.os.ParcelFileDescriptor;
 import android.text.InputType;
+import android.util.Log;
 import android.util.Pair;
 import android.util.Size;
 import android.view.View;
@@ -79,6 +80,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.ReadOnlyBufferException;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +89,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG = "FaceRecognition";
     FaceDetector detector;
 
     private ListenableFuture<ProcessCameraProvider> cameraProviderFuture;
@@ -122,6 +125,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         registered=readFromSP(); //Load saved faces from memory when app starts
+        Log.d(TAG, "onCreate: loaded recognitions count=" + registered.size());
         setContentView(R.layout.activity_main);
         face_preview =findViewById(R.id.imageView);
         reco_name =findViewById(R.id.textView);
@@ -132,6 +136,7 @@ public class MainActivity extends AppCompatActivity {
 
         SharedPreferences sharedPref = getSharedPreferences("Distance",Context.MODE_PRIVATE);
         distance = sharedPref.getFloat("distance",1.00f);
+        Log.d(TAG, "onCreate: loaded distance threshold=" + distance);
 
         face_preview.setVisibility(View.INVISIBLE);
         recognize=findViewById(R.id.button3);
@@ -142,6 +147,9 @@ public class MainActivity extends AppCompatActivity {
         //Camera Permission
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, MY_CAMERA_REQUEST_CODE);
+            Log.d(TAG, "onCreate: requested camera permission");
+        } else {
+            Log.d(TAG, "onCreate: camera permission already granted");
         }
         //On-screen Action Button
         actions.setOnClickListener(new View.OnClickListener() {
@@ -200,6 +208,7 @@ public class MainActivity extends AppCompatActivity {
                 // create and show the alert dialog
                 AlertDialog dialog = builder.create();
                 dialog.show();
+                Log.d(TAG, "Actions dialog opened with options count=" + names.length);
             }
         });
 
@@ -216,6 +225,7 @@ public class MainActivity extends AppCompatActivity {
                     flipX=false;
                 }
                 cameraProvider.unbindAll();
+                Log.d(TAG, "Camera switched. Using lens facing=" + cam_face + " flipX=" + flipX);
                 cameraBind();
             }
         });
@@ -242,6 +252,7 @@ public class MainActivity extends AppCompatActivity {
                 face_preview.setVisibility(View.INVISIBLE);
                 preview_info.setText("");
                 //preview_info.setVisibility(View.INVISIBLE);
+                Log.d(TAG, "recognize button: switched to recognize mode");
                 }
                 else
                 {
@@ -251,8 +262,7 @@ public class MainActivity extends AppCompatActivity {
                     reco_name.setVisibility(View.INVISIBLE);
                     face_preview.setVisibility(View.VISIBLE);
                     preview_info.setText("1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face.");
-
-
+                    Log.d(TAG, "recognize button: switched to add-face mode");
                 }
 
             }
@@ -318,10 +328,12 @@ public class MainActivity extends AppCompatActivity {
         if (developerMode) {
             developerMode = false;
             Toast.makeText(context, "Developer Mode OFF", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "developerMode: disabled");
         }
         else {
             developerMode = true;
             Toast.makeText(context, "Developer Mode ON", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "developerMode: enabled");
         }
     }
     private void addFace()
@@ -350,6 +362,7 @@ public class MainActivity extends AppCompatActivity {
                     result.setExtra(embeedings);
 
                     registered.put( input.getText().toString(),result);
+                    Log.d(TAG, "addFace: added name=" + input.getText().toString() + " embeddingLength=" + (embeedings != null && embeedings.length > 0 ? embeedings[0].length : 0));
                     start=true;
 
                 }
@@ -374,6 +387,7 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(DialogInterface dialog, int which) {
                 registered.clear();
                 Toast.makeText(context, "Recognitions Cleared", Toast.LENGTH_SHORT).show();
+                Log.w(TAG, "clearnameList: all recognitions cleared");
             }
         });
         insertToSP(registered,1);
@@ -410,6 +424,7 @@ public class MainActivity extends AppCompatActivity {
                         // user checked or unchecked a box
                         //Toast.makeText(MainActivity.this, names[which], Toast.LENGTH_SHORT).show();
                        checkedItems[which]=isChecked;
+                        Log.v(TAG, "updatenameListview: name=" + names[which] + " checked=" + isChecked);
 
                     }
                 });
@@ -427,6 +442,7 @@ public class MainActivity extends AppCompatActivity {
                             {
 //                                Toast.makeText(MainActivity.this, names[i], Toast.LENGTH_SHORT).show();
                                 registered.remove(names[i]);
+                                Log.d(TAG, "updatenameListview: removed recognition name=" + names[i]);
                             }
 
                         }
@@ -461,6 +477,7 @@ public class MainActivity extends AppCompatActivity {
                 //Toast.makeText(context, input.getText().toString(), Toast.LENGTH_SHORT).show();
 
                distance= Float.parseFloat(input.getText().toString());
+                Log.d(TAG, "hyperparameters: updated distance threshold=" + distance);
 
 
                 SharedPreferences sharedPref = getSharedPreferences("Distance",Context.MODE_PRIVATE);
@@ -504,6 +521,7 @@ public class MainActivity extends AppCompatActivity {
 
         }
         builder.setItems(names,null);
+        Log.d(TAG, "displaynameListview: showing recognitions count=" + names.length);
 
 
 
@@ -517,6 +535,7 @@ public class MainActivity extends AppCompatActivity {
             // create and show the alert dialog
         AlertDialog dialog = builder.create();
         dialog.show();
+        Log.d(TAG, "displaynameListview: dialog displayed");
     }
 
 
@@ -527,8 +546,10 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == MY_CAMERA_REQUEST_CODE) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 Toast.makeText(this, "camera permission granted", Toast.LENGTH_LONG).show();
+                Log.d(TAG, "onRequestPermissionsResult: camera permission granted");
             } else {
                 Toast.makeText(this, "camera permission denied", Toast.LENGTH_LONG).show();
+                Log.w(TAG, "onRequestPermissionsResult: camera permission denied");
             }
         }
     }
@@ -539,6 +560,7 @@ public class MainActivity extends AppCompatActivity {
         FileChannel fileChannel = inputStream.getChannel();
         long startOffset = fileDescriptor.getStartOffset();
         long declaredLength = fileDescriptor.getDeclaredLength();
+        Log.d(TAG, "loadModelFile: model=" + MODEL_FILE + " declaredLength=" + declaredLength);
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
     }
 
@@ -548,12 +570,15 @@ public class MainActivity extends AppCompatActivity {
         cameraProviderFuture = ProcessCameraProvider.getInstance(this);
 
         previewView=findViewById(R.id.previewView);
+        Log.d(TAG, "cameraBind: awaiting camera provider");
         cameraProviderFuture.addListener(() -> {
             try {
                 cameraProvider = cameraProviderFuture.get();
 
                 bindPreview(cameraProvider);
+                Log.d(TAG, "cameraBind: camera provider ready");
             } catch (ExecutionException | InterruptedException e) {
+                Log.e(TAG, "cameraBind: failed to get camera provider", e);
                 // No errors need to be handled for this in Future.
                 // This should never be reached.
             }
@@ -574,6 +599,8 @@ public class MainActivity extends AppCompatActivity {
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST) //Latest frame is shown
                         .build();
 
+        Log.d(TAG, "bindPreview: configured cameraSelector lensFacing=" + cam_face);
+        Log.d(TAG, "bindPreview: ImageAnalysis targetResolution=640x480 strategy=KEEP_ONLY_LATEST");
         Executor executor = Executors.newSingleThreadExecutor();
         imageAnalysis.setAnalyzer(executor, new ImageAnalysis.Analyzer() {
             @Override
@@ -594,6 +621,7 @@ public class MainActivity extends AppCompatActivity {
                 if (mediaImage != null) {
                     image = InputImage.fromMediaImage(mediaImage, imageProxy.getImageInfo().getRotationDegrees());
 //                    System.out.println("Rotation "+imageProxy.getImageInfo().getRotationDegrees());
+                    Log.v(TAG, "analyze: frame rotationDegrees=" + imageProxy.getImageInfo().getRotationDegrees());
                 }
 
 //                System.out.println("ANALYSIS");
@@ -605,11 +633,13 @@ public class MainActivity extends AppCompatActivity {
                                         new OnSuccessListener<List<Face>>() {
                                             @Override
                                             public void onSuccess(List<Face> faces) {
+                                                Log.d(TAG, "analyze: detected faces count=" + faces.size());
 
                                                 if(faces.size()!=0) {
 
                                                     Face face = faces.get(0); //Get first face from detected faces
 //                                                    System.out.println(face);
+                                                    Log.v(TAG, "analyze: using first face boundingBox=" + face.getBoundingBox());
 
                                                     //mediaImage to Bitmap
                                                     Bitmap frame_bmp = toBitmap(mediaImage);
@@ -618,6 +648,7 @@ public class MainActivity extends AppCompatActivity {
 
                                                     //Adjust orientation of Face
                                                     Bitmap frame_bmp1 = rotateBitmap(frame_bmp, rot, false, false);
+                                                    Log.v(TAG, "analyze: rotated frame size=" + frame_bmp1.getWidth() + "x" + frame_bmp1.getHeight());
 
 
 
@@ -626,11 +657,13 @@ public class MainActivity extends AppCompatActivity {
 
                                                     //Crop out bounding box from whole Bitmap(image)
                                                     Bitmap cropped_face = getCropBitmapByCPU(frame_bmp1, boundingBox);
+                                                    Log.v(TAG, "analyze: cropped face size=" + cropped_face.getWidth() + "x" + cropped_face.getHeight());
 
                                                     if(flipX)
                                                         cropped_face = rotateBitmap(cropped_face, 0, flipX, false);
                                                     //Scale the acquired Face to 112*112 which is required input for model
                                                     Bitmap scaled = getResizedBitmap(cropped_face, 112, 112);
+                                                    Log.v(TAG, "analyze: scaled face size=" + scaled.getWidth() + "x" + scaled.getHeight());
 
                                                     if(start)
                                                         recognizeImage(scaled); //Send scaled bitmap to create face embeddings.
@@ -643,6 +676,7 @@ public class MainActivity extends AppCompatActivity {
                                                         reco_name.setText("Add Face");
                                                     else
                                                         reco_name.setText("No Face Detected!");
+                                                    Log.v(TAG, "analyze: no faces detected registeredCount=" + registered.size());
                                                 }
 
                                             }
@@ -653,6 +687,7 @@ public class MainActivity extends AppCompatActivity {
                                             public void onFailure(@NonNull Exception e) {
                                                 // Task failed with an exception
                                                 // ...
+                                                Log.e(TAG, "analyze: face detection failure", e);
                                             }
                                         })
                                 .addOnCompleteListener(new OnCompleteListener<List<Face>>() {
@@ -660,6 +695,7 @@ public class MainActivity extends AppCompatActivity {
                             public void onComplete(@NonNull Task<List<Face>> task) {
 
                                 imageProxy.close(); //v.important to acquire next frame for analysis
+                                Log.v(TAG, "analyze: imageProxy closed");
                             }
                         });
 
@@ -669,6 +705,7 @@ public class MainActivity extends AppCompatActivity {
 
 
         cameraProvider.bindToLifecycle((LifecycleOwner) this, cameraSelector, imageAnalysis, preview);
+        Log.d(TAG, "bindPreview: camera bound to lifecycle");
 
 
     }
@@ -677,6 +714,7 @@ public class MainActivity extends AppCompatActivity {
 
         // set Face to Preview
         face_preview.setImageBitmap(bitmap);
+        Log.v(TAG, "recognizeImage: processing bitmap size=" + bitmap.getWidth() + "x" + bitmap.getHeight());
 
         //Create ByteBuffer to store normalized image
 
@@ -719,6 +757,14 @@ public class MainActivity extends AppCompatActivity {
 
         tfLite.runForMultipleInputsOutputs(inputArray, outputMap); //Run model
 
+        int embeddingLength = (embeedings != null && embeedings.length > 0) ? embeedings[0].length : 0;
+        if (embeddingLength > 0) {
+            float[] sample = Arrays.copyOfRange(embeedings[0], 0, Math.min(5, embeddingLength));
+            Log.d(TAG, "recognizeImage: embedding generated length=" + embeddingLength + " sample=" + Arrays.toString(sample));
+        } else {
+            Log.w(TAG, "recognizeImage: embedding array empty");
+        }
+
 
 
         float distance_local = Float.MAX_VALUE;
@@ -735,6 +781,7 @@ public class MainActivity extends AppCompatActivity {
                 final String name = nearest.get(0).first; //get name and distance of closest matching face
                // label = name;
                 distance_local = nearest.get(0).second;
+                Log.d(TAG, "recognizeImage: nearest name=" + name + " distance=" + distance_local + " threshold=" + distance);
                 if (developerMode)
                 {
                     if(distance_local<distance) //If distance between Closest found face is more than 1.000 ,then output UNKNOWN face.
@@ -790,6 +837,7 @@ public class MainActivity extends AppCompatActivity {
                 distance += diff*diff;
             }
             distance = (float) Math.sqrt(distance);
+            Log.v(TAG, "findNearest: candidate=" + name + " distance=" + distance);
             if (ret == null || distance < ret.second) {
                 prev_ret=ret;
                 ret = new Pair<>(name, distance);
@@ -970,6 +1018,7 @@ public class MainActivity extends AppCompatActivity {
         editor.putString("map", jsonString);
         //System.out.println("Input josn"+jsonString.toString());
         editor.apply();
+        Log.d(TAG, "insertToSP: mode=" + mode + " savedCount=" + jsonMap.size() + " jsonLength=" + jsonString.length());
         Toast.makeText(context, "Recognitions Saved", Toast.LENGTH_SHORT).show();
     }
 
@@ -999,6 +1048,7 @@ public class MainActivity extends AppCompatActivity {
 
         }
 //        System.out.println("OUTPUT"+ Arrays.deepToString(outut));
+        Log.d(TAG, "readFromSP: retrievedCount=" + retrievedMap.size() + " rawJsonLength=" + json.length() + "rawjson: "+json);
         Toast.makeText(context, "Recognitions Loaded", Toast.LENGTH_SHORT).show();
         return retrievedMap;
     }
@@ -1016,14 +1066,17 @@ public class MainActivity extends AppCompatActivity {
     //Similar Analyzing Procedure
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        Log.d(TAG, "onActivityResult: requestCode=" + requestCode + " resultCode=" + resultCode);
         if (resultCode == RESULT_OK) {
             if (requestCode == SELECT_PICTURE) {
                 Uri selectedImageUri = data.getData();
+                Log.d(TAG, "loadphoto: selected uri=" + selectedImageUri);
                 try {
                     InputImage impphoto=InputImage.fromBitmap(getBitmapFromUri(selectedImageUri),0);
                     detector.process(impphoto).addOnSuccessListener(new OnSuccessListener<List<Face>>() {
                         @Override
                         public void onSuccess(List<Face> faces) {
+                            Log.d(TAG, "loadphoto: detected faces count=" + faces.size());
 
                             if(faces.size()!=0) {
                                 recognize.setText("Recognize");
@@ -1065,12 +1118,16 @@ public class MainActivity extends AppCompatActivity {
                                     e.printStackTrace();
                                 }
                             }
+                            else {
+                                Log.w(TAG, "loadphoto: no face detected in selected image");
+                            }
                         }
                     }).addOnFailureListener(new OnFailureListener() {
                         @Override
                         public void onFailure(@NonNull Exception e) {
                             start=true;
                             Toast.makeText(context, "Failed to add", Toast.LENGTH_SHORT).show();
+                            Log.e(TAG, "loadphoto: face detection failed", e);
                         }
                     });
                     face_preview.setImageBitmap(getBitmapFromUri(selectedImageUri));

@@ -17,6 +17,11 @@ A minimalistic Face Recognition module which can be easily incorporated in any A
 - ML Kit
 - TensorFlow Lite
 
+## Debug Logging
+- All critical data objects now emit structured logs through Android `Log` (tag: `FaceRecognition`).
+- Logged values cover camera frames, detected faces, embedding vector size/sample values, recognition distances, thresholds, and persistence actions (save/load/clear).
+- Use Android Studio Logcat and filter by `FaceRecognition` to inspect the runtime data flow and confirm which data types are used at every stage.
+
 ## Model 
 - MobileFaceNet : [Research Paper](https://arxiv.org/ftp/arxiv/papers/1804/1804.07573.pdf)
 - [Implementation](https://github.com/sirius-ai/MobileFaceNet_TF)
