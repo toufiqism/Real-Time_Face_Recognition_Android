@@ -21,6 +21,7 @@ A minimalistic Face Recognition module which can be easily incorporated in any A
 - All critical data objects now emit structured logs through Android `Log` (tag: `FaceRecognition`).
 - Logged values cover camera frames, detected faces, embedding vector size/sample values, recognition distances, thresholds, and persistence actions (save/load/clear).
 - Use Android Studio Logcat and filter by `FaceRecognition` to inspect the runtime data flow and confirm which data types are used at every stage.
+- Toggle `Developer Mode` from the in-app `Actions` menu to additionally stream the full embedding arrays for the active face and every stored recognition; the output is chunked so the complete vectors appear sequentially in Logcat.
 
 ## Model 
 - MobileFaceNet : [Research Paper](https://arxiv.org/ftp/arxiv/papers/1804/1804.07573.pdf)

@@ -100,7 +100,7 @@ public class MainActivity extends AppCompatActivity {
     Button recognize,camera_switch, actions;
     ImageButton add_face;
     CameraSelector cameraSelector;
-    boolean developerMode=false;
+    private volatile boolean developerMode=false;
     float distance= 1.0f;
     boolean start=true,flipX=false;
     Context context=MainActivity.this;
@@ -761,6 +761,7 @@ public class MainActivity extends AppCompatActivity {
         if (embeddingLength > 0) {
             float[] sample = Arrays.copyOfRange(embeedings[0], 0, Math.min(5, embeddingLength));
             Log.d(TAG, "recognizeImage: embedding generated length=" + embeddingLength + " sample=" + Arrays.toString(sample));
+            logEmbeddingArray("Current embedding", embeedings[0]);
         } else {
             Log.w(TAG, "recognizeImage: embedding array empty");
         }
@@ -829,7 +830,18 @@ public class MainActivity extends AppCompatActivity {
         {
 
             final String name = entry.getKey();
-           final float[] knownEmb = ((float[][]) entry.getValue().getExtra())[0];
+            Object extra = entry.getValue().getExtra();
+            if (!(extra instanceof float[][])) {
+                Log.w(TAG, "findNearest: skipping candidate=" + name + " because embedding type is " + (extra != null ? extra.getClass() : "null"));
+                continue;
+            }
+            float[][] storedEmbeddings = (float[][]) extra;
+            if (storedEmbeddings.length == 0 || storedEmbeddings[0] == null) {
+                Log.w(TAG, "findNearest: skipping candidate=" + name + " due to empty embedding array");
+                continue;
+            }
+            final float[] knownEmb = storedEmbeddings[0];
+            logEmbeddingArray("Stored embedding for " + name, knownEmb);
 
             float distance = 0;
             for (int i = 0; i < emb.length; i++) {
@@ -849,6 +861,25 @@ public class MainActivity extends AppCompatActivity {
 
         return neighbour_list;
 
+    }
+
+    private void logEmbeddingArray(String label, float[] embedding) {
+        if (!developerMode) {
+            return;
+        }
+        if (embedding == null) {
+            Log.w(TAG, label + ": embedding array is null");
+            return;
+        }
+        String full = Arrays.toString(embedding);
+        int maxLogLength = 3000;
+        int chunkIndex = 0;
+        for (int start = 0; start < full.length(); start += maxLogLength) {
+            int end = Math.min(full.length(), start + maxLogLength);
+            String chunk = full.substring(start, end);
+            Log.d(TAG, label + " length=" + embedding.length + " chunk=" + chunkIndex + ": " + chunk);
+            chunkIndex++;
+        }
     }
     public Bitmap getResizedBitmap(Bitmap bm, int newWidth, int newHeight) {
         int width = bm.getWidth();
