@@ -12,7 +12,7 @@
         android:theme="@style/Theme.FaceRecognition.NoActionBar">
         <activity android:name=".MainActivity"></activity>
         <activity
-            android:name=".splash_screen"
+            android:name=".SplashScreen"
             android:label="@string/app_name"
             android:theme="@style/Theme.FaceRecognition.NoActionBar"
             android:exported="true">

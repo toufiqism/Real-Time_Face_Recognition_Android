@@ -12,7 +12,7 @@ A minimalistic Face Recognition module which can be easily incorporated in any A
 - Simple UI.
 
 ## Tools and Frameworks used:
-- Android Studio (Java)
+- Android Studio (Kotlin)
 - CameraX
 - ML Kit
 - TensorFlow Lite
