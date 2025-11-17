@@ -4,7 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
@@ -24,33 +23,73 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
-import android.text.InputType
 import android.util.Log
 import android.util.Pair
 import android.util.Size
-import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.ImageButton
-import android.widget.ImageView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.NonNull
 import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import com.google.android.gms.tasks.OnCompleteListener
-import com.google.android.gms.tasks.OnFailureListener
-import com.google.android.gms.tasks.OnSuccessListener
-import com.google.android.gms.tasks.Task
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -76,40 +115,15 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "FaceRecognition"
-        private const val SELECT_PICTURE = 1
-        private const val MY_CAMERA_REQUEST_CODE = 100
         private const val MODEL_FILE = "mobile_face_net.tflite"
     }
 
     private lateinit var detector: FaceDetector
     private var cameraProviderFuture: ListenableFuture<ProcessCameraProvider>? = null
-    private lateinit var previewView: PreviewView
-    private lateinit var face_preview: ImageView
     private lateinit var tfLite: Interpreter
-    private lateinit var reco_name: TextView
-    private lateinit var preview_info: TextView
-    private lateinit var textAbove_preview: TextView
-    private lateinit var recognize: Button
-    private lateinit var camera_switch: Button
-    private lateinit var actions: Button
-    private lateinit var add_face: ImageButton
-    private lateinit var cameraSelector: CameraSelector
-    private var developerMode = false
-    private var distance = 1.0f
-    private var start = true
-    private var flipX = false
-    private val context: Context = this
-    private var cam_face = CameraSelector.LENS_FACING_BACK // Default Back Camera
-    private var intValues: IntArray? = null
-    private val inputSize = 112 // Input size for model
-    private val isModelQuantized = false
-    private var embeedings: Array<FloatArray>? = null
-    private val IMAGE_MEAN = 128.0f
-    private val IMAGE_STD = 128.0f
-    private val OUTPUT_SIZE = 192 // Output size of model
     private var cameraProvider: ProcessCameraProvider? = null
     private val registered = HashMap<String, SimilarityClassifier.Recognition>() // saved Faces
 
@@ -118,111 +132,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         registered.putAll(readFromSP()) // Load saved faces from memory when app starts
         Log.d(TAG, "onCreate: loaded recognitions count=${registered.size}")
-        setContentView(R.layout.activity_main)
-        
-        face_preview = findViewById(R.id.imageView)
-        reco_name = findViewById(R.id.textView)
-        preview_info = findViewById(R.id.textView2)
-        textAbove_preview = findViewById(R.id.textAbovePreview)
-        add_face = findViewById(R.id.imageButton)
-        add_face.visibility = View.INVISIBLE
-
-        val sharedPref = getSharedPreferences("Distance", Context.MODE_PRIVATE)
-        distance = sharedPref.getFloat("distance", 1.00f)
-        Log.d(TAG, "onCreate: loaded distance threshold=$distance")
-
-        face_preview.visibility = View.INVISIBLE
-        recognize = findViewById(R.id.button3)
-        camera_switch = findViewById(R.id.button5)
-        actions = findViewById(R.id.button2)
-        textAbove_preview.text = "Recognized Face:"
-
-        // Camera Permission
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), MY_CAMERA_REQUEST_CODE)
-            Log.d(TAG, "onCreate: requested camera permission")
-        } else {
-            Log.d(TAG, "onCreate: camera permission already granted")
-        }
-
-        // On-screen Action Button
-        actions.setOnClickListener {
-            val builder = AlertDialog.Builder(context)
-            builder.setTitle("Select Action:")
-
-            // add a checkbox list
-            val names = arrayOf(
-                "View Recognition List",
-                "Update Recognition List",
-                "Save Recognitions",
-                "Load Recognitions",
-                "Clear All Recognitions",
-                "Import Photo (Beta)",
-                "Hyperparameters",
-                "Developer Mode"
-            )
-
-            builder.setItems(names) { dialog, which ->
-                when (which) {
-                    0 -> displaynameListview()
-                    1 -> updatenameListview()
-                    2 -> insertToSP(registered, 0) // mode: 0:save all, 1:clear all, 2:update all
-                    3 -> registered.putAll(readFromSP())
-                    4 -> clearnameList()
-                    5 -> loadphoto()
-                    6 -> testHyperparameter()
-                    7 -> developerMode()
-                }
-            }
-
-            builder.setPositiveButton("OK") { dialog, which -> }
-            builder.setNegativeButton("Cancel", null)
-
-            // create and show the alert dialog
-            val dialog = builder.create()
-            dialog.show()
-            Log.d(TAG, "Actions dialog opened with options count=${names.size}")
-        }
-
-        // On-screen switch to toggle between Cameras.
-        camera_switch.setOnClickListener {
-            if (cam_face == CameraSelector.LENS_FACING_BACK) {
-                cam_face = CameraSelector.LENS_FACING_FRONT
-                flipX = true
-            } else {
-                cam_face = CameraSelector.LENS_FACING_BACK
-                flipX = false
-            }
-            cameraProvider?.unbindAll()
-            Log.d(TAG, "Camera switched. Using lens facing=$cam_face flipX=$flipX")
-            cameraBind()
-        }
-
-        add_face.setOnClickListener {
-            addFace()
-        }
-
-        recognize.setOnClickListener {
-            if (recognize.text.toString() == "Recognize") {
-                start = true
-                textAbove_preview.text = "Recognized Face:"
-                recognize.text = "Add Face"
-                add_face.visibility = View.INVISIBLE
-                reco_name.visibility = View.VISIBLE
-                face_preview.visibility = View.INVISIBLE
-                preview_info.text = ""
-                Log.d(TAG, "recognize button: switched to recognize mode")
-            } else {
-                textAbove_preview.text = "Face Preview: "
-                recognize.text = "Recognize"
-                add_face.visibility = View.VISIBLE
-                reco_name.visibility = View.INVISIBLE
-                face_preview.visibility = View.VISIBLE
-                preview_info.text =
-                    "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
-                Log.d(TAG, "recognize button: switched to add-face mode")
-            }
-        }
 
         // Load model
         try {
@@ -237,195 +146,17 @@ class MainActivity : AppCompatActivity() {
             .build()
         detector = FaceDetection.getClient(highAccuracyOpts)
 
-        cameraBind()
-    }
-
-    private fun testHyperparameter() {
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Select Hyperparameter:")
-
-        // add a checkbox list
-        val names = arrayOf("Maximum Nearest Neighbour Distance")
-
-        builder.setItems(names) { dialog, which ->
-            when (which) {
-                0 -> hyperparameters()
-            }
-        }
-
-        builder.setPositiveButton("OK") { dialog, which -> }
-        builder.setNegativeButton("Cancel", null)
-
-        // create and show the alert dialog
-        val dialog = builder.create()
-        dialog.show()
-    }
-
-    private fun developerMode() {
-        developerMode = !developerMode
-        val message = if (developerMode) "Developer Mode ON" else "Developer Mode OFF"
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "developerMode: ${if (developerMode) "enabled" else "disabled"}")
-    }
-
-    private fun addFace() {
-        start = false
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Enter Name")
-
-        // Set up the input
-        val input = EditText(context)
-        input.inputType = InputType.TYPE_CLASS_TEXT
-        builder.setView(input)
-
-        // Set up the buttons
-        builder.setPositiveButton("ADD") { dialog, which ->
-            // Create and Initialize new object with Face embeddings and Name.
-            val result = SimilarityClassifier.Recognition("0", "", -1f)
-            result.extra = embeedings
-
-            registered[input.text.toString()] = result
-            Log.d(
-                TAG,
-                "addFace: added name=${input.text} embeddingLength=${embeedings?.get(0)?.size ?: 0}"
-            )
-            start = true
-        }
-
-        builder.setNegativeButton("Cancel") { dialog, which ->
-            start = true
-            dialog.cancel()
-        }
-
-        builder.show()
-    }
-
-    private fun clearnameList() {
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Do you want to delete all Recognitions?")
-        builder.setPositiveButton("Delete All") { dialog, which ->
-            registered.clear()
-            Toast.makeText(context, "Recognitions Cleared", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "clearnameList: all recognitions cleared")
-        }
-        insertToSP(registered, 1)
-        builder.setNegativeButton("Cancel", null)
-        val dialog = builder.create()
-        dialog.show()
-    }
-
-    private fun updatenameListview() {
-        val builder = AlertDialog.Builder(context)
-        if (registered.isEmpty()) {
-            builder.setTitle("No Faces Added!!")
-            builder.setPositiveButton("OK", null)
-        } else {
-            builder.setTitle("Select Recognition to delete:")
-
-            // add a checkbox list
-            val names = arrayOfNulls<String>(registered.size)
-            val checkedItems = BooleanArray(registered.size)
-            var i = 0
-            for ((key, _) in registered) {
-                names[i] = key
-                checkedItems[i] = false
-                i++
-            }
-
-            builder.setMultiChoiceItems(names, checkedItems) { dialog, which, isChecked ->
-                // user checked or unchecked a box
-                checkedItems[which] = isChecked
-                Log.v(TAG, "updatenameListview: name=${names[which]} checked=$isChecked")
-            }
-
-            builder.setPositiveButton("OK") { dialog, which ->
-                for (i in checkedItems.indices) {
-                    if (checkedItems[i]) {
-                        registered.remove(names[i])
-                        Log.d(TAG, "updatenameListview: removed recognition name=${names[i]}")
-                    }
-                }
-                insertToSP(registered, 2) // mode: 0:save all, 1:clear all, 2:update all
-                Toast.makeText(context, "Recognitions Updated", Toast.LENGTH_SHORT).show()
-            }
-            builder.setNegativeButton("Cancel", null)
-
-            // create and show the alert dialog
-            val dialog = builder.create()
-            dialog.show()
-        }
-    }
-
-    private fun hyperparameters() {
-        val builder = AlertDialog.Builder(context)
-        builder.setTitle("Euclidean Distance")
-        builder.setMessage(
-            "0.00 -> Perfect Match\n1.00 -> Default\nTurn On Developer Mode to find optimum value\n\nCurrent Value:"
-        )
-        // Set up the input
-        val input = EditText(context)
-        input.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-        builder.setView(input)
-        val sharedPref = getSharedPreferences("Distance", Context.MODE_PRIVATE)
-        distance = sharedPref.getFloat("distance", 1.00f)
-        input.setText(distance.toString())
-        // Set up the buttons
-        builder.setPositiveButton("Update") { dialog, which ->
-            distance = input.text.toString().toFloat()
-            Log.d(TAG, "hyperparameters: updated distance threshold=$distance")
-
-            val sharedPref = getSharedPreferences("Distance", Context.MODE_PRIVATE)
-            val editor = sharedPref.edit()
-            editor.putFloat("distance", distance)
-            editor.apply()
-        }
-        builder.setNegativeButton("Cancel") { dialog, which ->
-            dialog.cancel()
-        }
-
-        builder.show()
-    }
-
-    private fun displaynameListview() {
-        val builder = AlertDialog.Builder(context)
-        if (registered.isEmpty())
-            builder.setTitle("No Faces Added!!")
-        else
-            builder.setTitle("Recognitions:")
-
-        // add a checkbox list
-        val names = arrayOfNulls<String>(registered.size)
-        val checkedItems = BooleanArray(registered.size)
-        var i = 0
-        for ((key, _) in registered) {
-            names[i] = key
-            checkedItems[i] = false
-            i++
-        }
-        builder.setItems(names, null)
-        Log.d(TAG, "displaynameListview: showing recognitions count=${names.size}")
-
-        builder.setPositiveButton("OK") { dialog, which -> }
-
-        // create and show the alert dialog
-        val dialog = builder.create()
-        dialog.show()
-        Log.d(TAG, "displaynameListview: dialog displayed")
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == MY_CAMERA_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "camera permission granted", Toast.LENGTH_LONG).show()
-                Log.d(TAG, "onRequestPermissionsResult: camera permission granted")
-            } else {
-                Toast.makeText(this, "camera permission denied", Toast.LENGTH_LONG).show()
-                Log.w(TAG, "onRequestPermissionsResult: camera permission denied")
+        setContent {
+            FaceRecognitionTheme {
+                MainScreen(
+                    activity = this@MainActivity,
+                    detector = detector,
+                    tfLite = tfLite,
+                    registered = registered,
+                    onRegisteredChanged = { registered.putAll(it) },
+                    onCameraProviderReady = { cameraProvider = it },
+                    cameraProvider = cameraProvider
+                )
             }
         }
     }
@@ -439,467 +170,6 @@ class MainActivity : AppCompatActivity() {
         val declaredLength = fileDescriptor.declaredLength
         Log.d(TAG, "loadModelFile: model=$MODEL_FILE declaredLength=$declaredLength")
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-    }
-
-    // Bind camera and preview view
-    private fun cameraBind() {
-        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        previewView = findViewById(R.id.previewView)
-        Log.d(TAG, "cameraBind: awaiting camera provider")
-        cameraProviderFuture?.addListener({
-            try {
-                cameraProvider = cameraProviderFuture?.get()
-
-                cameraProvider?.let { bindPreview(it) }
-                Log.d(TAG, "cameraBind: camera provider ready")
-            } catch (e: ExecutionException) {
-                Log.e(TAG, "cameraBind: failed to get camera provider", e)
-            } catch (e: InterruptedException) {
-                Log.e(TAG, "cameraBind: failed to get camera provider", e)
-            }
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    private fun bindPreview(@NonNull cameraProvider: ProcessCameraProvider) {
-        val preview = Preview.Builder().build()
-
-        cameraSelector = CameraSelector.Builder()
-            .requireLensFacing(cam_face)
-            .build()
-
-        preview.setSurfaceProvider(previewView.surfaceProvider)
-        val imageAnalysis = ImageAnalysis.Builder()
-            .setTargetResolution(Size(640, 480))
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST) // Latest frame is shown
-            .build()
-
-        Log.d(TAG, "bindPreview: configured cameraSelector lensFacing=$cam_face")
-        Log.d(TAG, "bindPreview: ImageAnalysis targetResolution=640x480 strategy=KEEP_ONLY_LATEST")
-        val executor = Executors.newSingleThreadExecutor()
-        imageAnalysis.setAnalyzer(executor) { imageProxy ->
-            try {
-                Thread.sleep(0) // Camera preview refreshed every 10 millisec(adjust as required)
-            } catch (e: InterruptedException) {
-                e.printStackTrace()
-            }
-
-            @SuppressLint("UnsafeExperimentalUsageError")
-            // Camera Feed-->Analyzer-->ImageProxy-->mediaImage-->InputImage(needed for ML kit face detection)
-            val mediaImage = imageProxy.image
-
-            val image = if (mediaImage != null) {
-                InputImage.fromMediaImage(
-                    mediaImage,
-                    imageProxy.imageInfo.rotationDegrees
-                )
-            } else {
-                null
-            }
-
-            if (image != null) {
-                Log.v(TAG, "analyze: frame rotationDegrees=${imageProxy.imageInfo.rotationDegrees}")
-            }
-
-            // Process acquired image to detect faces
-            if (image != null && mediaImage != null) {
-                detector.process(image)
-                    .addOnSuccessListener { faces ->
-                        if (faces.isNotEmpty()) {
-                            val face = faces[0] // Get first face from detected faces
-
-                            // mediaImage to Bitmap
-                            val frame_bmp = toBitmap(mediaImage)
-
-                            val rot = imageProxy.imageInfo.rotationDegrees
-
-                            // Adjust orientation of Face
-                            var frame_bmp1 = rotateBitmap(frame_bmp, rot, false, false)
-
-                            // Get bounding box of face
-                            val boundingBox = RectF(face.boundingBox)
-
-                            // Crop out bounding box from whole Bitmap(image)
-                            var cropped_face = getCropBitmapByCPU(frame_bmp1, boundingBox)
-                            Log.v(
-                                TAG,
-                                "analyze: cropped face size=${cropped_face.width}x${cropped_face.height}"
-                            )
-
-                            if (flipX)
-                                cropped_face = rotateBitmap(cropped_face, 0, flipX, false)
-                            // Scale the acquired Face to 112*112 which is required input for model
-                            val scaled = getResizedBitmap(cropped_face, 112, 112)
-                            Log.v(
-                                TAG,
-                                "analyze: scaled face size=${scaled.width}x${scaled.height}"
-                            )
-
-                            if (start)
-                                recognizeImage(scaled) // Send scaled bitmap to create face embeddings.
-                        } else {
-                            if (registered.isEmpty())
-                                reco_name.text = "Add Face"
-                            else
-                                reco_name.text = "No Face Detected!"
-                            Log.v(
-                                TAG,
-                                "analyze: no faces detected registeredCount=${registered.size}"
-                            )
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        // Task failed with an exception
-                        Log.e(TAG, "analyze: face detection failure", e)
-                    }
-                    .addOnCompleteListener {
-                        imageProxy.close() // v.important to acquire next frame for analysis
-                        Log.v(TAG, "analyze: imageProxy closed")
-                    }
-            } else {
-                imageProxy.close()
-            }
-        }
-
-        cameraProvider.bindToLifecycle(
-            this as LifecycleOwner,
-            cameraSelector,
-            imageAnalysis,
-            preview
-        )
-        Log.d(TAG, "bindPreview: camera bound to lifecycle")
-    }
-
-    fun recognizeImage(bitmap: Bitmap) {
-        // set Face to Preview
-        face_preview.setImageBitmap(bitmap)
-        Log.v(TAG, "recognizeImage: processing bitmap size=${bitmap.width}x${bitmap.height}")
-
-        // Create ByteBuffer to store normalized image
-        val imgData = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4)
-        imgData.order(ByteOrder.nativeOrder())
-
-        intValues = IntArray(inputSize * inputSize)
-
-        // get pixel values from Bitmap to normalize
-        bitmap.getPixels(
-            intValues!!,
-            0,
-            bitmap.width,
-            0,
-            0,
-            bitmap.width,
-            bitmap.height
-        )
-
-        imgData.rewind()
-
-        for (i in 0 until inputSize) {
-            for (j in 0 until inputSize) {
-                val pixelValue = intValues!![i * inputSize + j]
-                if (isModelQuantized) {
-                    // Quantized model
-                    imgData.put(((pixelValue shr 16) and 0xFF).toByte())
-                    imgData.put(((pixelValue shr 8) and 0xFF).toByte())
-                    imgData.put((pixelValue and 0xFF).toByte())
-                } else { // Float model
-                    imgData.putFloat((((pixelValue shr 16) and 0xFF) - IMAGE_MEAN) / IMAGE_STD)
-                    imgData.putFloat((((pixelValue shr 8) and 0xFF) - IMAGE_MEAN) / IMAGE_STD)
-                    imgData.putFloat(((pixelValue and 0xFF) - IMAGE_MEAN) / IMAGE_STD)
-                }
-            }
-        }
-        // imgData is input to our model
-        val inputArray = arrayOf<Any>(imgData)
-
-        val outputMap = HashMap<Int, Any>()
-
-        embeedings = Array(1) { FloatArray(OUTPUT_SIZE) } // output of model will be stored in this variable
-
-        outputMap[0] = embeedings!!
-
-        tfLite.runForMultipleInputsOutputs(inputArray, outputMap) // Run model
-
-        val embeddingLength = if (embeedings != null && embeedings!!.isNotEmpty()) {
-            embeedings!![0].size
-        } else {
-            0
-        }
-        if (embeddingLength > 0) {
-            val sample = Arrays.copyOfRange(
-                embeedings!![0],
-                0,
-                minOf(5, embeddingLength)
-            )
-            Log.d(
-                TAG,
-                "recognizeImage: embedding generated length=$embeddingLength sample=${Arrays.toString(sample)}"
-            )
-            logEmbeddingArray("Current embedding", embeedings!![0])
-        } else {
-            Log.w(TAG, "recognizeImage: embedding array empty")
-        }
-
-        var distance_local = Float.MAX_VALUE
-        val id = "0"
-        var label = "?"
-
-        // Compare new face with saved Faces.
-        if (registered.isNotEmpty()) {
-            val nearest = findNearest(embeedings!![0]) // Find 2 closest matching face
-
-            if (nearest.isNotEmpty() && nearest[0] != null) {
-                val name = nearest[0].first // get name and distance of closest matching face
-                distance_local = nearest[0].second
-                Log.d(
-                    TAG,
-                    "recognizeImage: nearest name=$name distance=$distance_local threshold=$distance"
-                )
-                if (developerMode) {
-                    val secondNearest = if (nearest.size > 1) nearest[1] else Pair("N/A", Float.MAX_VALUE)
-                    if (distance_local < distance) // If distance between Closest found face is more than 1.000 ,then output UNKNOWN face.
-                        reco_name.text =
-                            "Nearest: $name\nDist: ${String.format("%.3f", distance_local)}\n2nd Nearest: ${secondNearest.first}\nDist: ${String.format("%.3f", secondNearest.second)}"
-                    else
-                        reco_name.text =
-                            "Unknown\nDist: ${String.format("%.3f", distance_local)}\nNearest: $name\nDist: ${String.format("%.3f", distance_local)}\n2nd Nearest: ${secondNearest.first}\nDist: ${String.format("%.3f", secondNearest.second)}"
-                } else {
-                    if (distance_local < distance) // If distance between Closest found face is more than 1.000 ,then output UNKNOWN face.
-                        reco_name.text = name
-                    else
-                        reco_name.text = "Unknown"
-                }
-            }
-        }
-    }
-
-    // Compare Faces by distance between face embeddings
-    private fun findNearest(emb: FloatArray): List<Pair<String, Float>> {
-        val neighbour_list = ArrayList<Pair<String, Float>>()
-        var ret: Pair<String, Float>? = null // to get closest match
-        var prev_ret: Pair<String, Float>? = null // to get second closest match
-        for ((name, recognition) in registered) {
-            val extra = recognition.extra
-            if (extra !is Array<*>) {
-                Log.w(
-                    TAG,
-                    "findNearest: skipping candidate=$name because embedding type is ${extra?.javaClass?.name ?: "null"}"
-                )
-                continue
-            }
-            val storedEmbeddings = extra as? Array<FloatArray>
-            if (storedEmbeddings == null || storedEmbeddings.isEmpty() || storedEmbeddings[0] == null) {
-                Log.w(TAG, "findNearest: skipping candidate=$name due to empty embedding array")
-                continue
-            }
-            val knownEmb = storedEmbeddings[0]
-            logEmbeddingArray("Stored embedding for $name", knownEmb)
-
-            var distance = 0f
-            for (i in emb.indices) {
-                val diff = emb[i] - knownEmb[i]
-                distance += diff * diff
-            }
-            distance = kotlin.math.sqrt(distance)
-            Log.v(TAG, "findNearest: candidate=$name distance=$distance")
-            if (ret == null || distance < ret.second) {
-                prev_ret = ret
-                ret = Pair(name, distance)
-            }
-        }
-        if (prev_ret == null) prev_ret = ret
-        neighbour_list.add(ret ?: Pair("", Float.MAX_VALUE))
-        neighbour_list.add(prev_ret ?: Pair("", Float.MAX_VALUE))
-
-        return neighbour_list
-    }
-
-    private fun logEmbeddingArray(label: String, embedding: FloatArray?) {
-        if (!developerMode) {
-            return
-        }
-        if (embedding == null) {
-            Log.w(TAG, "$label: embedding array is null")
-            return
-        }
-        val full = Arrays.toString(embedding)
-        val maxLogLength = 3000
-        var chunkIndex = 0
-        var start = 0
-        while (start < full.length) {
-            val end = minOf(full.length, start + maxLogLength)
-            val chunk = full.substring(start, end)
-            Log.d(TAG, "$label length=${embedding.size} chunk=$chunkIndex: $chunk")
-            chunkIndex++
-            start += maxLogLength
-        }
-    }
-
-    fun getResizedBitmap(bm: Bitmap, newWidth: Int, newHeight: Int): Bitmap {
-        val width = bm.width
-        val height = bm.height
-        val scaleWidth = newWidth.toFloat() / width
-        val scaleHeight = newHeight.toFloat() / height
-        // CREATE A MATRIX FOR THE MANIPULATION
-        val matrix = Matrix()
-        // RESIZE THE BIT MAP
-        matrix.postScale(scaleWidth, scaleHeight)
-
-        // "RECREATE" THE NEW BITMAP
-        val resizedBitmap = Bitmap.createBitmap(
-            bm, 0, 0, width, height, matrix, false
-        )
-        bm.recycle()
-        return resizedBitmap
-    }
-
-    private fun getCropBitmapByCPU(source: Bitmap, cropRectF: RectF): Bitmap {
-        val resultBitmap = Bitmap.createBitmap(
-            cropRectF.width().toInt(),
-            cropRectF.height().toInt(),
-            Bitmap.Config.ARGB_8888
-        )
-        val cavas = Canvas(resultBitmap)
-
-        // draw background
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        paint.color = Color.WHITE
-        cavas.drawRect(
-            RectF(0f, 0f, cropRectF.width(), cropRectF.height()),
-            paint
-        )
-
-        val matrix = Matrix()
-        matrix.postTranslate(-cropRectF.left, -cropRectF.top)
-
-        cavas.drawBitmap(source, matrix, paint)
-
-        if (source != null && !source.isRecycled) {
-            source.recycle()
-        }
-
-        return resultBitmap
-    }
-
-    private fun rotateBitmap(
-        bitmap: Bitmap,
-        rotationDegrees: Int,
-        flipX: Boolean,
-        flipY: Boolean
-    ): Bitmap {
-        val matrix = Matrix()
-
-        // Rotate the image back to straight.
-        matrix.postRotate(rotationDegrees.toFloat())
-
-        // Mirror the image along the X or Y axis.
-        matrix.postScale(if (flipX) -1.0f else 1.0f, if (flipY) -1.0f else 1.0f)
-        val rotatedBitmap = Bitmap.createBitmap(
-            bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
-        )
-
-        // Recycle the old bitmap if it has changed.
-        if (rotatedBitmap != bitmap) {
-            bitmap.recycle()
-        }
-        return rotatedBitmap
-    }
-
-    // IMPORTANT. If conversion not done ,the toBitmap conversion does not work on some devices.
-    private fun YUV_420_888toNV21(image: Image): ByteArray {
-        val width = image.width
-        val height = image.height
-        val ySize = width * height
-        val uvSize = width * height / 4
-
-        val nv21 = ByteArray(ySize + uvSize * 2)
-
-        val yBuffer = image.planes[0].buffer // Y
-        val uBuffer = image.planes[1].buffer // U
-        val vBuffer = image.planes[2].buffer // V
-
-        var rowStride = image.planes[0].rowStride
-        assert(image.planes[0].pixelStride == 1)
-
-        var pos = 0
-
-        if (rowStride == width) { // likely
-            yBuffer.get(nv21, 0, ySize)
-            pos += ySize
-        } else {
-            var yBufferPos = -rowStride.toLong() // not an actual position
-            while (pos < ySize) {
-                yBufferPos += rowStride
-                yBuffer.position(yBufferPos.toInt())
-                yBuffer.get(nv21, pos, width)
-                pos += width
-            }
-        }
-
-        rowStride = image.planes[2].rowStride
-        val pixelStride = image.planes[2].pixelStride
-
-        assert(rowStride == image.planes[1].rowStride)
-        assert(pixelStride == image.planes[1].pixelStride)
-
-        if (pixelStride == 2 && rowStride == width && uBuffer[0] == vBuffer[1]) {
-            // maybe V an U planes overlap as per NV21, which means vBuffer[1] is alias of uBuffer[0]
-            val savePixel = vBuffer[1]
-            try {
-                val invertedPixel = (savePixel.toInt().inv() and 0xFF).toByte()
-                vBuffer.put(1, invertedPixel)
-                if (uBuffer[0] == invertedPixel) {
-                    vBuffer.put(1, savePixel)
-                    vBuffer.position(0)
-                    uBuffer.position(0)
-                    vBuffer.get(nv21, ySize, 1)
-                    uBuffer.get(nv21, ySize + 1, uBuffer.remaining())
-
-                    return nv21 // shortcut
-                }
-            } catch (ex: ReadOnlyBufferException) {
-                // unfortunately, we cannot check if vBuffer and uBuffer overlap
-            }
-
-            // unfortunately, the check failed. We must save U and V pixel by pixel
-            vBuffer.put(1, savePixel)
-        }
-
-        // other optimizations could check if (pixelStride == 1) or (pixelStride == 2),
-        // but performance gain would be less significant
-
-        for (row in 0 until height / 2) {
-            for (col in 0 until width / 2) {
-                val vuPos = col * pixelStride + row * rowStride
-                nv21[pos++] = vBuffer[vuPos]
-                nv21[pos++] = uBuffer[vuPos]
-            }
-        }
-
-        return nv21
-    }
-
-    private fun toBitmap(image: Image): Bitmap {
-        val nv21 = YUV_420_888toNV21(image)
-
-        val yuvImage = YuvImage(
-            nv21,
-            ImageFormat.NV21,
-            image.width,
-            image.height,
-            null
-        )
-
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(
-            Rect(0, 0, yuvImage.width, yuvImage.height),
-            75,
-            out
-        )
-
-        val imageBytes = out.toByteArray()
-
-        return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
     }
 
     // Save Faces to Shared Preferences.Conversion of Recognition objects to json string
@@ -925,7 +195,7 @@ class MainActivity : AppCompatActivity() {
             TAG,
             "insertToSP: mode=$mode savedCount=${mapToSave.size} jsonLength=${jsonString.length}"
         )
-        Toast.makeText(context, "Recognitions Saved", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Recognitions Saved", Toast.LENGTH_SHORT).show()
     }
 
     // Load Faces from Shared Preferences.Json String to Recognition object
@@ -941,6 +211,7 @@ class MainActivity : AppCompatActivity() {
 
         // During type conversion and save/load procedure,format changes(eg float converted to double).
         // So embeddings need to be extracted from it in required format(eg.double to float).
+        val OUTPUT_SIZE = 192
         for ((_, recognition) in retrievedMap) {
             val output = Array(1) { FloatArray(OUTPUT_SIZE) }
             var arrayList = recognition.extra as? ArrayList<*>
@@ -956,98 +227,1204 @@ class MainActivity : AppCompatActivity() {
             TAG,
             "readFromSP: retrievedCount=${retrievedMap.size} rawJsonLength=${json.length} rawjson: $json"
         )
-        Toast.makeText(context, "Recognitions Loaded", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Recognitions Loaded", Toast.LENGTH_SHORT).show()
         return retrievedMap
     }
+}
 
-    // Load Photo from phone storage
-    private fun loadphoto() {
-        start = false
-        val intent = Intent()
-        intent.type = "image/*"
-        intent.action = Intent.ACTION_GET_CONTENT
-        startActivityForResult(Intent.createChooser(intent, "Select Picture"), SELECT_PICTURE)
+@Composable
+fun MainScreen(
+    activity: MainActivity,
+    detector: FaceDetector,
+    tfLite: Interpreter,
+    registered: HashMap<String, SimilarityClassifier.Recognition>,
+    onRegisteredChanged: (HashMap<String, SimilarityClassifier.Recognition>) -> Unit,
+    onCameraProviderReady: (ProcessCameraProvider) -> Unit,
+    cameraProvider: ProcessCameraProvider?
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    // Local camera provider state
+    var localCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(cameraProvider) }
+
+    // State management
+    var start by remember { mutableStateOf(true) }
+    var developerMode by remember { mutableStateOf(false) }
+    var distance by remember {
+        val sharedPref = context.getSharedPreferences("Distance", Context.MODE_PRIVATE)
+        mutableFloatStateOf(sharedPref.getFloat("distance", 1.00f))
+    }
+    var flipX by remember { mutableStateOf(false) }
+    var camFace by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+    var faceBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var recoName by remember { mutableStateOf("Add Face") }
+    var previewInfo by remember { mutableStateOf("") }
+    var textAbovePreview by remember { mutableStateOf("Recognized Face:") }
+    var isAddFaceVisible by remember { mutableStateOf(false) }
+    var isFacePreviewVisible by remember { mutableStateOf(false) }
+    var isRecoNameVisible by remember { mutableStateOf(true) }
+    var recognizeButtonText by remember { mutableStateOf("Add Face") }
+
+    // Dialog states
+    var showActionsDialog by remember { mutableStateOf(false) }
+    var showAddFaceDialog by remember { mutableStateOf(false) }
+    var showViewRecognitionDialog by remember { mutableStateOf(false) }
+    var showUpdateRecognitionDialog by remember { mutableStateOf(false) }
+    var showClearRecognitionDialog by remember { mutableStateOf(false) }
+    var showHyperparameterDialog by remember { mutableStateOf(false) }
+    var showHyperparameterSelectDialog by remember { mutableStateOf(false) }
+    var selectedNamesForUpdate by remember { mutableStateOf(setOf<String>()) }
+
+    // Camera permission
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Log.d("FaceRecognition", "Camera permission granted")
+        } else {
+            Toast.makeText(context, "Camera permission denied", Toast.LENGTH_LONG).show()
+            Log.w("FaceRecognition", "Camera permission denied")
+        }
     }
 
-    // Similar Analyzing Procedure
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        Log.d(TAG, "onActivityResult: requestCode=$requestCode resultCode=$resultCode")
-        if (resultCode == RESULT_OK && data != null) {
-            if (requestCode == SELECT_PICTURE) {
-                val selectedImageUri = data.data
-                Log.d(TAG, "loadphoto: selected uri=$selectedImageUri")
-                if (selectedImageUri != null) {
-                    try {
-                        val impphoto = InputImage.fromBitmap(
-                            getBitmapFromUri(selectedImageUri),
-                            0
-                        )
-                        detector.process(impphoto)
-                            .addOnSuccessListener { faces ->
-                                Log.d(TAG, "loadphoto: detected faces count=${faces.size}")
+    // Image selection launcher
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            handleImageSelection(
+                uri = uri,
+                context = context,
+                detector = detector,
+                tfLite = tfLite,
+                registered = registered,
+                flipX = flipX,
+                onFaceBitmapChanged = { faceBitmap = it },
+                onRecognizeButtonTextChanged = { recognizeButtonText = it },
+                onAddFaceVisibleChanged = { isAddFaceVisible = it },
+                onRecoNameVisibleChanged = { isRecoNameVisible = it },
+                onFacePreviewVisibleChanged = { isFacePreviewVisible = it },
+                onPreviewInfoChanged = { previewInfo = it },
+                onTextAbovePreviewChanged = { textAbovePreview = it },
+                onStartChanged = { start = it },
+                onShowAddFaceDialog = { showAddFaceDialog = true }
+            )
+        }
+    }
 
-                                if (faces.isNotEmpty()) {
-                                    recognize.text = "Recognize"
-                                    add_face.visibility = View.VISIBLE
-                                    reco_name.visibility = View.INVISIBLE
-                                    face_preview.visibility = View.VISIBLE
-                                    preview_info.text =
-                                        "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
-                                    val face = faces[0]
+    // Check camera permission on launch
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
-                                    // write code to recreate bitmap from source
-                                    // Write code to show bitmap to canvas
+    // Camera setup
+    var previewView: PreviewView? by remember { mutableStateOf(null) }
+    var cameraSelector: CameraSelector? by remember { mutableStateOf(null) }
+    var embeedings: Array<FloatArray>? by remember { mutableStateOf(null) }
+    val intValues = remember { IntArray(112 * 112) }
+    val inputSize = 112
+    val isModelQuantized = false
+    val IMAGE_MEAN = 128.0f
+    val IMAGE_STD = 128.0f
+    val OUTPUT_SIZE = 192
 
-                                    var frame_bmp: Bitmap? = null
-                                    try {
-                                        frame_bmp = getBitmapFromUri(selectedImageUri)
-                                    } catch (e: IOException) {
-                                        e.printStackTrace()
-                                    }
+    // Initialize camera provider
+    LaunchedEffect(Unit) {
+        if (localCameraProvider == null) {
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+            cameraProviderFuture.addListener({
+                try {
+                    val provider = cameraProviderFuture.get()
+                    localCameraProvider = provider
+                    onCameraProviderReady(provider)
+                } catch (e: ExecutionException) {
+                    Log.e("FaceRecognition", "Failed to get camera provider", e)
+                } catch (e: InterruptedException) {
+                    Log.e("FaceRecognition", "Failed to get camera provider", e)
+                }
+            }, ContextCompat.getMainExecutor(context))
+        }
+    }
+    
+    // Update local camera provider when external one changes
+    LaunchedEffect(cameraProvider) {
+        localCameraProvider = cameraProvider
+    }
+    
+    // Bind camera when provider is ready or camera face changes
+    LaunchedEffect(camFace, localCameraProvider) {
+        if (localCameraProvider != null) {
+            localCameraProvider?.unbindAll()
+            bindCamera(
+                context = context,
+                lifecycleOwner = lifecycleOwner,
+                cameraProvider = localCameraProvider!!,
+                camFace = camFace,
+                detector = detector,
+                tfLite = tfLite,
+                registered = registered,
+                start = start,
+                flipX = flipX,
+                distance = distance,
+                developerMode = developerMode,
+                intValues = intValues,
+                inputSize = inputSize,
+                isModelQuantized = isModelQuantized,
+                IMAGE_MEAN = IMAGE_MEAN,
+                IMAGE_STD = IMAGE_STD,
+                OUTPUT_SIZE = OUTPUT_SIZE,
+                onPreviewViewReady = { previewView = it },
+                onCameraSelectorReady = { cameraSelector = it },
+                onEmbeedingsChanged = { embeedings = it },
+                onFaceBitmapChanged = { faceBitmap = it },
+                onRecoNameChanged = { recoName = it }
+            )
+        }
+    }
 
-                                    if (frame_bmp != null) {
-                                        var frame_bmp1 = rotateBitmap(frame_bmp, 0, flipX, false)
+    Scaffold(
+        modifier = Modifier.fillMaxSize()
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Camera Preview
+            Box(
+                modifier = Modifier
+                    .width(297.dp)
+                    .height(279.dp)
+            ) {
+                previewView?.let { pv ->
+                    AndroidView(
+                        factory = { pv },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } ?: Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Initializing camera...")
+                }
 
-                                        val boundingBox = RectF(face.boundingBox)
+                // Camera switch button
+                FloatingActionButton(
+                    onClick = {
+                        camFace = if (camFace == CameraSelector.LENS_FACING_BACK) {
+                            flipX = true
+                            CameraSelector.LENS_FACING_FRONT
+                        } else {
+                            flipX = false
+                            CameraSelector.LENS_FACING_BACK
+                        }
+                        localCameraProvider?.unbindAll()
+                        Log.d("FaceRecognition", "Camera switched. Using lens facing=$camFace flipX=$flipX")
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = "Switch Camera"
+                    )
+                }
+            }
 
-                                        val cropped_face = getCropBitmapByCPU(frame_bmp1, boundingBox)
+            // Text above preview
+            Text(
+                text = textAbovePreview,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
 
-                                        val scaled = getResizedBitmap(cropped_face, 112, 112)
-
-                                        recognizeImage(scaled)
-                                        addFace()
-                                        try {
-                                            Thread.sleep(100)
-                                        } catch (e: InterruptedException) {
-                                            e.printStackTrace()
-                                        }
-                                    }
-                                } else {
-                                    Log.w(TAG, "loadphoto: no face detected in selected image")
-                                }
-                            }
-                            .addOnFailureListener { e ->
-                                start = true
-                                Toast.makeText(context, "Failed to add", Toast.LENGTH_SHORT).show()
-                                Log.e(TAG, "loadphoto: face detection failed", e)
-                            }
-                        face_preview.setImageBitmap(getBitmapFromUri(selectedImageUri))
-                    } catch (e: IOException) {
-                        e.printStackTrace()
+            // Face preview or Recognition name
+            Box(
+                modifier = Modifier
+                    .width(203.dp)
+                    .height(200.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isFacePreviewVisible && faceBitmap != null) {
+                    Image(
+                        bitmap = faceBitmap!!.asImageBitmap(),
+                        contentDescription = "Face Preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                    if (isAddFaceVisible) {
+                        FloatingActionButton(
+                            onClick = { showAddFaceDialog = true },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Face"
+                            )
+                        }
                     }
+                } else if (isRecoNameVisible) {
+                    Text(
+                        text = recoName,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // Preview info text
+                if (previewInfo.isNotEmpty()) {
+                    Text(
+                        text = previewInfo,
+                        fontSize = 15.sp,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            // Buttons row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Button(
+                    onClick = {
+                        if (recognizeButtonText == "Recognize") {
+                            start = true
+                            textAbovePreview = "Recognized Face:"
+                            recognizeButtonText = "Add Face"
+                            isAddFaceVisible = false
+                            isRecoNameVisible = true
+                            isFacePreviewVisible = false
+                            previewInfo = ""
+                            Log.d("FaceRecognition", "recognize button: switched to recognize mode")
+                        } else {
+                            textAbovePreview = "Face Preview: "
+                            recognizeButtonText = "Recognize"
+                            isAddFaceVisible = true
+                            isRecoNameVisible = false
+                            isFacePreviewVisible = true
+                            previewInfo =
+                                "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
+                            Log.d("FaceRecognition", "recognize button: switched to add-face mode")
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(recognizeButtonText)
+                }
+
+                Button(
+                    onClick = { showActionsDialog = true },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("ACTIONS")
                 }
             }
         }
     }
 
-    @Throws(IOException::class)
-    private fun getBitmapFromUri(uri: Uri): Bitmap {
-        val parcelFileDescriptor = contentResolver.openFileDescriptor(uri, "r")
-        val fileDescriptor = parcelFileDescriptor?.fileDescriptor
-        val image = BitmapFactory.decodeFileDescriptor(fileDescriptor)
-        parcelFileDescriptor?.close()
-        return image ?: throw IOException("Failed to decode bitmap from URI")
+    // Dialogs
+    if (showActionsDialog) {
+        ActionsDialog(
+            onDismiss = { showActionsDialog = false },
+            onViewRecognition = { showViewRecognitionDialog = true },
+            onUpdateRecognition = { showUpdateRecognitionDialog = true },
+            onSaveRecognitions = {
+                val mapToSave = HashMap(registered)
+                val jsonString = Gson().toJson(mapToSave)
+                val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
+                val editor = sharedPreferences.edit()
+                editor.putString("map", jsonString)
+                editor.apply()
+                Toast.makeText(context, "Recognitions Saved", Toast.LENGTH_SHORT).show()
+                showActionsDialog = false
+            },
+            onLoadRecognitions = {
+                val loaded = readFromSP(context)
+                onRegisteredChanged(loaded)
+                showActionsDialog = false
+            },
+            onClearRecognitions = { showClearRecognitionDialog = true },
+            onImportPhoto = {
+                imagePickerLauncher.launch("image/*")
+                showActionsDialog = false
+            },
+            onHyperparameters = { showHyperparameterSelectDialog = true },
+            onDeveloperMode = {
+                developerMode = !developerMode
+                Toast.makeText(
+                    context,
+                    if (developerMode) "Developer Mode ON" else "Developer Mode OFF",
+                    Toast.LENGTH_SHORT
+                ).show()
+                showActionsDialog = false
+            }
+        )
+    }
+
+    if (showAddFaceDialog) {
+        AddFaceDialog(
+            onDismiss = { showAddFaceDialog = false },
+            onAdd = { name ->
+                val result = SimilarityClassifier.Recognition("0", "", -1f)
+                result.extra = embeedings
+                registered[name] = result
+                onRegisteredChanged(registered)
+                start = true
+                showAddFaceDialog = false
+                Log.d("FaceRecognition", "addFace: added name=$name")
+            }
+        )
+    }
+
+    if (showViewRecognitionDialog) {
+        ViewRecognitionDialog(
+            registered = registered,
+            onDismiss = { showViewRecognitionDialog = false }
+        )
+    }
+
+    if (showUpdateRecognitionDialog) {
+        UpdateRecognitionDialog(
+            registered = registered,
+            selectedNames = selectedNamesForUpdate,
+            onSelectedNamesChanged = { selectedNamesForUpdate = it },
+            onDismiss = { showUpdateRecognitionDialog = false },
+            onUpdate = {
+                selectedNamesForUpdate.forEach { name ->
+                    registered.remove(name)
+                }
+                onRegisteredChanged(registered)
+                val mapToSave = HashMap(registered)
+                val jsonString = Gson().toJson(mapToSave)
+                val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
+                val editor = sharedPreferences.edit()
+                editor.putString("map", jsonString)
+                editor.apply()
+                Toast.makeText(context, "Recognitions Updated", Toast.LENGTH_SHORT).show()
+                selectedNamesForUpdate = setOf()
+                showUpdateRecognitionDialog = false
+            }
+        )
+    }
+
+    if (showClearRecognitionDialog) {
+        ClearRecognitionDialog(
+            onDismiss = { showClearRecognitionDialog = false },
+            onConfirm = {
+                registered.clear()
+                val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
+                val editor = sharedPreferences.edit()
+                editor.putString("map", Gson().toJson(HashMap<String, SimilarityClassifier.Recognition>()))
+                editor.apply()
+                onRegisteredChanged(registered)
+                Toast.makeText(context, "Recognitions Cleared", Toast.LENGTH_SHORT).show()
+                showClearRecognitionDialog = false
+            }
+        )
+    }
+
+    if (showHyperparameterSelectDialog) {
+        HyperparameterSelectDialog(
+            onDismiss = { showHyperparameterSelectDialog = false },
+            onSelect = { showHyperparameterDialog = true }
+        )
+    }
+
+    if (showHyperparameterDialog) {
+        HyperparameterDialog(
+            currentDistance = distance,
+            onDismiss = { showHyperparameterDialog = false },
+            onUpdate = { newDistance ->
+                distance = newDistance
+                val sharedPref = context.getSharedPreferences("Distance", Context.MODE_PRIVATE)
+                val editor = sharedPref.edit()
+                editor.putFloat("distance", distance)
+                editor.apply()
+                Log.d("FaceRecognition", "hyperparameters: updated distance threshold=$distance")
+                showHyperparameterDialog = false
+            }
+        )
     }
 }
 
+@Composable
+fun ActionsDialog(
+    onDismiss: () -> Unit,
+    onViewRecognition: () -> Unit,
+    onUpdateRecognition: () -> Unit,
+    onSaveRecognitions: () -> Unit,
+    onLoadRecognitions: () -> Unit,
+    onClearRecognitions: () -> Unit,
+    onImportPhoto: () -> Unit,
+    onHyperparameters: () -> Unit,
+    onDeveloperMode: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Action:") },
+        text = {
+            Column {
+                ActionItem("View Recognition List", onClick = onViewRecognition)
+                ActionItem("Update Recognition List", onClick = onUpdateRecognition)
+                ActionItem("Save Recognitions", onClick = onSaveRecognitions)
+                ActionItem("Load Recognitions", onClick = onLoadRecognitions)
+                ActionItem("Clear All Recognitions", onClick = onClearRecognitions)
+                ActionItem("Import Photo (Beta)", onClick = onImportPhoto)
+                ActionItem("Hyperparameters", onClick = onHyperparameters)
+                ActionItem("Developer Mode", onClick = onDeveloperMode)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun ActionItem(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        fontSize = 16.sp
+    )
+}
+
+@Composable
+fun AddFaceDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter Name") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (name.isNotEmpty()) {
+                        onAdd(name)
+                    }
+                }
+            ) {
+                Text("ADD")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun ViewRecognitionDialog(
+    registered: HashMap<String, SimilarityClassifier.Recognition>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (registered.isEmpty()) "No Faces Added!!" else "Recognitions:")
+        },
+        text = {
+            if (registered.isEmpty()) {
+                Text("No recognitions available")
+            } else {
+                LazyColumn {
+                    items(registered.keys.toList()) { name ->
+                        Text(
+                            text = name,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+@Composable
+fun UpdateRecognitionDialog(
+    registered: HashMap<String, SimilarityClassifier.Recognition>,
+    selectedNames: Set<String>,
+    onSelectedNamesChanged: (Set<String>) -> Unit,
+    onDismiss: () -> Unit,
+    onUpdate: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (registered.isEmpty()) "No Faces Added!!" else "Select Recognition to delete:"
+            )
+        },
+        text = {
+            if (registered.isEmpty()) {
+                Text("No recognitions available")
+            } else {
+                LazyColumn {
+                    items(registered.keys.toList()) { name ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val newSelection = selectedNames.toMutableSet()
+                                    if (newSelection.contains(name)) {
+                                        newSelection.remove(name)
+                                    } else {
+                                        newSelection.add(name)
+                                    }
+                                    onSelectedNamesChanged(newSelection)
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = selectedNames.contains(name),
+                                onCheckedChange = {
+                                    val newSelection = selectedNames.toMutableSet()
+                                    if (it) {
+                                        newSelection.add(name)
+                                    } else {
+                                        newSelection.remove(name)
+                                    }
+                                    onSelectedNamesChanged(newSelection)
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = name,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onUpdate) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun ClearRecognitionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Do you want to delete all Recognitions?") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete All")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun HyperparameterSelectDialog(
+    onDismiss: () -> Unit,
+    onSelect: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Hyperparameter:") },
+        text = {
+            ActionItem("Maximum Nearest Neighbour Distance", onClick = onSelect)
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun HyperparameterDialog(
+    currentDistance: Float,
+    onDismiss: () -> Unit,
+    onUpdate: (Float) -> Unit
+) {
+    var distanceText by remember { mutableStateOf(currentDistance.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Euclidean Distance") },
+        text = {
+            Column {
+                Text(
+                    "0.00 -> Perfect Match\n1.00 -> Default\nTurn On Developer Mode to find optimum value\n\nCurrent Value:"
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = distanceText,
+                    onValueChange = { distanceText = it },
+                    label = { Text("Distance") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    try {
+                        val newDistance = distanceText.toFloat()
+                        onUpdate(newDistance)
+                    } catch (e: NumberFormatException) {
+                        // Invalid input, do nothing
+                    }
+                }
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+fun readFromSP(context: Context): HashMap<String, SimilarityClassifier.Recognition> {
+    val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
+    val defValue = Gson().toJson(HashMap<String, SimilarityClassifier.Recognition>())
+    val json = sharedPreferences.getString("map", defValue) ?: defValue
+    val token = object : TypeToken<HashMap<String, SimilarityClassifier.Recognition>>() {}
+    val retrievedMap = Gson().fromJson<HashMap<String, SimilarityClassifier.Recognition>>(
+        json,
+        token.type
+    ) ?: HashMap()
+
+    val OUTPUT_SIZE = 192
+    for ((_, recognition) in retrievedMap) {
+        val output = Array(1) { FloatArray(OUTPUT_SIZE) }
+        var arrayList = recognition.extra as? ArrayList<*>
+        arrayList = arrayList?.get(0) as? ArrayList<*>
+        if (arrayList != null) {
+            for (counter in arrayList.indices) {
+                output[0][counter] = (arrayList[counter] as? Double)?.toFloat() ?: 0f
+            }
+        }
+        recognition.extra = output
+    }
+    Toast.makeText(context, "Recognitions Loaded", Toast.LENGTH_SHORT).show()
+    return retrievedMap
+}
+
+fun handleImageSelection(
+    uri: Uri,
+    context: Context,
+    detector: FaceDetector,
+    tfLite: Interpreter,
+    registered: HashMap<String, SimilarityClassifier.Recognition>,
+    flipX: Boolean,
+    onFaceBitmapChanged: (Bitmap?) -> Unit,
+    onRecognizeButtonTextChanged: (String) -> Unit,
+    onAddFaceVisibleChanged: (Boolean) -> Unit,
+    onRecoNameVisibleChanged: (Boolean) -> Unit,
+    onFacePreviewVisibleChanged: (Boolean) -> Unit,
+    onPreviewInfoChanged: (String) -> Unit,
+    onTextAbovePreviewChanged: (String) -> Unit,
+    onStartChanged: (Boolean) -> Unit,
+    onShowAddFaceDialog: () -> Unit
+) {
+    try {
+        val bitmap = getBitmapFromUri(context, uri)
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        detector.process(inputImage)
+            .addOnSuccessListener { faces ->
+                if (faces.isNotEmpty()) {
+                    onRecognizeButtonTextChanged("Recognize")
+                    onAddFaceVisibleChanged(true)
+                    onRecoNameVisibleChanged(false)
+                    onFacePreviewVisibleChanged(true)
+                    onPreviewInfoChanged(
+                        "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
+                    )
+                    val face = faces[0]
+                    var frame_bmp1 = rotateBitmap(bitmap, 0, flipX, false)
+                    val boundingBox = RectF(face.boundingBox)
+                    val cropped_face = getCropBitmapByCPU(frame_bmp1, boundingBox)
+                    val scaled = getResizedBitmap(cropped_face, 112, 112)
+                    onFaceBitmapChanged(scaled)
+                    onShowAddFaceDialog()
+                }
+            }
+            .addOnFailureListener {
+                Toast.makeText(context, "Failed to add", Toast.LENGTH_SHORT).show()
+            }
+        onFaceBitmapChanged(bitmap)
+    } catch (e: IOException) {
+        e.printStackTrace()
+    }
+}
+
+@Throws(IOException::class)
+fun getBitmapFromUri(context: Context, uri: Uri): Bitmap {
+    val parcelFileDescriptor = context.contentResolver.openFileDescriptor(uri, "r")
+    val fileDescriptor = parcelFileDescriptor?.fileDescriptor
+    val image = BitmapFactory.decodeFileDescriptor(fileDescriptor)
+    parcelFileDescriptor?.close()
+    return image ?: throw IOException("Failed to decode bitmap from URI")
+}
+
+fun bindCamera(
+    context: Context,
+    lifecycleOwner: LifecycleOwner,
+    cameraProvider: ProcessCameraProvider,
+    camFace: Int,
+    detector: FaceDetector,
+    tfLite: Interpreter,
+    registered: HashMap<String, SimilarityClassifier.Recognition>,
+    start: Boolean,
+    flipX: Boolean,
+    distance: Float,
+    developerMode: Boolean,
+    intValues: IntArray,
+    inputSize: Int,
+    isModelQuantized: Boolean,
+    IMAGE_MEAN: Float,
+    IMAGE_STD: Float,
+    OUTPUT_SIZE: Int,
+    onPreviewViewReady: (PreviewView) -> Unit,
+    onCameraSelectorReady: (CameraSelector) -> Unit,
+    onEmbeedingsChanged: (Array<FloatArray>?) -> Unit,
+    onFaceBitmapChanged: (Bitmap?) -> Unit,
+    onRecoNameChanged: (String) -> Unit
+) {
+    val preview = Preview.Builder().build()
+    val previewView = PreviewView(context)
+    preview.setSurfaceProvider(previewView.surfaceProvider)
+
+    val cameraSelector = CameraSelector.Builder()
+        .requireLensFacing(camFace)
+        .build()
+
+    onPreviewViewReady(previewView)
+    onCameraSelectorReady(cameraSelector)
+
+    val imageAnalysis = ImageAnalysis.Builder()
+        .setTargetResolution(Size(640, 480))
+        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+        .build()
+
+    val executor = Executors.newSingleThreadExecutor()
+    imageAnalysis.setAnalyzer(executor) { imageProxy ->
+        try {
+            Thread.sleep(0)
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        }
+
+        @SuppressLint("UnsafeExperimentalUsageError")
+        val mediaImage = imageProxy.image
+
+        val image = if (mediaImage != null) {
+            InputImage.fromMediaImage(
+                mediaImage,
+                imageProxy.imageInfo.rotationDegrees
+            )
+        } else {
+            null
+        }
+
+        if (image != null && mediaImage != null) {
+            detector.process(image)
+                .addOnSuccessListener { faces ->
+                    if (faces.isNotEmpty()) {
+                        val face = faces[0]
+                        val frame_bmp = toBitmap(mediaImage)
+                        val rot = imageProxy.imageInfo.rotationDegrees
+                        var frame_bmp1 = rotateBitmap(frame_bmp, rot, false, false)
+                        val boundingBox = RectF(face.boundingBox)
+                        var cropped_face = getCropBitmapByCPU(frame_bmp1, boundingBox)
+
+                        if (flipX)
+                            cropped_face = rotateBitmap(cropped_face, 0, flipX, false)
+                        val scaled = getResizedBitmap(cropped_face, 112, 112)
+
+                        if (start) {
+                            recognizeImage(
+                                scaled,
+                                tfLite,
+                                registered,
+                                distance,
+                                developerMode,
+                                intValues,
+                                inputSize,
+                                isModelQuantized,
+                                IMAGE_MEAN,
+                                IMAGE_STD,
+                                OUTPUT_SIZE,
+                                onEmbeedingsChanged,
+                                onFaceBitmapChanged,
+                                onRecoNameChanged
+                            )
+                        }
+                    } else {
+                        if (registered.isEmpty())
+                            onRecoNameChanged("Add Face")
+                        else
+                            onRecoNameChanged("No Face Detected!")
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("FaceRecognition", "analyze: face detection failure", e)
+                }
+                .addOnCompleteListener {
+                    imageProxy.close()
+                }
+        } else {
+            imageProxy.close()
+        }
+    }
+
+    cameraProvider.bindToLifecycle(
+        lifecycleOwner,
+        cameraSelector,
+        imageAnalysis,
+        preview
+    )
+}
+
+fun recognizeImage(
+    bitmap: Bitmap,
+    tfLite: Interpreter,
+    registered: HashMap<String, SimilarityClassifier.Recognition>,
+    distance: Float,
+    developerMode: Boolean,
+    intValues: IntArray,
+    inputSize: Int,
+    isModelQuantized: Boolean,
+    IMAGE_MEAN: Float,
+    IMAGE_STD: Float,
+    OUTPUT_SIZE: Int,
+    onEmbeedingsChanged: (Array<FloatArray>?) -> Unit,
+    onFaceBitmapChanged: (Bitmap?) -> Unit,
+    onRecoNameChanged: (String) -> Unit
+) {
+    onFaceBitmapChanged(bitmap)
+
+    val imgData = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4)
+    imgData.order(ByteOrder.nativeOrder())
+
+    bitmap.getPixels(
+        intValues,
+        0,
+        bitmap.width,
+        0,
+        0,
+        bitmap.width,
+        bitmap.height
+    )
+
+    imgData.rewind()
+
+    for (i in 0 until inputSize) {
+        for (j in 0 until inputSize) {
+            val pixelValue = intValues[i * inputSize + j]
+            if (isModelQuantized) {
+                imgData.put(((pixelValue shr 16) and 0xFF).toByte())
+                imgData.put(((pixelValue shr 8) and 0xFF).toByte())
+                imgData.put((pixelValue and 0xFF).toByte())
+            } else {
+                imgData.putFloat((((pixelValue shr 16) and 0xFF) - IMAGE_MEAN) / IMAGE_STD)
+                imgData.putFloat((((pixelValue shr 8) and 0xFF) - IMAGE_MEAN) / IMAGE_STD)
+                imgData.putFloat(((pixelValue and 0xFF) - IMAGE_MEAN) / IMAGE_STD)
+            }
+        }
+    }
+
+    val inputArray = arrayOf<Any>(imgData)
+    val outputMap = HashMap<Int, Any>()
+    val embeedings = Array(1) { FloatArray(OUTPUT_SIZE) }
+    outputMap[0] = embeedings
+
+    tfLite.runForMultipleInputsOutputs(inputArray, outputMap)
+    onEmbeedingsChanged(embeedings)
+
+    var distance_local = Float.MAX_VALUE
+    var label = "?"
+
+    if (registered.isNotEmpty()) {
+        val nearest = findNearest(embeedings[0], registered)
+
+        if (nearest.isNotEmpty() && nearest[0] != null) {
+            val name = nearest[0].first
+            distance_local = nearest[0].second
+
+            if (developerMode) {
+                val secondNearest = if (nearest.size > 1) nearest[1] else Pair("N/A", Float.MAX_VALUE)
+                if (distance_local < distance)
+                    onRecoNameChanged(
+                        "Nearest: $name\nDist: ${String.format("%.3f", distance_local)}\n2nd Nearest: ${secondNearest.first}\nDist: ${String.format("%.3f", secondNearest.second)}"
+                    )
+                else
+                    onRecoNameChanged(
+                        "Unknown\nDist: ${String.format("%.3f", distance_local)}\nNearest: $name\nDist: ${String.format("%.3f", distance_local)}\n2nd Nearest: ${secondNearest.first}\nDist: ${String.format("%.3f", secondNearest.second)}"
+                    )
+            } else {
+                if (distance_local < distance)
+                    onRecoNameChanged(name)
+                else
+                    onRecoNameChanged("Unknown")
+            }
+        }
+    }
+}
+
+private fun findNearest(
+    emb: FloatArray,
+    registered: HashMap<String, SimilarityClassifier.Recognition>
+): List<Pair<String, Float>> {
+    val neighbour_list = ArrayList<Pair<String, Float>>()
+    var ret: Pair<String, Float>? = null
+    var prev_ret: Pair<String, Float>? = null
+
+    for ((name, recognition) in registered) {
+        val extra = recognition.extra
+        if (extra !is Array<*>) {
+            continue
+        }
+        val storedEmbeddings = extra as? Array<FloatArray>
+        if (storedEmbeddings == null || storedEmbeddings.isEmpty() || storedEmbeddings[0] == null) {
+            continue
+        }
+        val knownEmb = storedEmbeddings[0]
+
+        var distance = 0f
+        for (i in emb.indices) {
+            val diff = emb[i] - knownEmb[i]
+            distance += diff * diff
+        }
+        distance = kotlin.math.sqrt(distance)
+
+        if (ret == null || distance < ret.second) {
+            prev_ret = ret
+            ret = Pair(name, distance)
+        }
+    }
+    if (prev_ret == null) prev_ret = ret
+    neighbour_list.add(ret ?: Pair("", Float.MAX_VALUE))
+    neighbour_list.add(prev_ret ?: Pair("", Float.MAX_VALUE))
+
+    return neighbour_list
+}
+
+fun getResizedBitmap(bm: Bitmap, newWidth: Int, newHeight: Int): Bitmap {
+    val width = bm.width
+    val height = bm.height
+    val scaleWidth = newWidth.toFloat() / width
+    val scaleHeight = newHeight.toFloat() / height
+    val matrix = Matrix()
+    matrix.postScale(scaleWidth, scaleHeight)
+
+    val resizedBitmap = Bitmap.createBitmap(
+        bm, 0, 0, width, height, matrix, false
+    )
+    bm.recycle()
+    return resizedBitmap
+}
+
+private fun getCropBitmapByCPU(source: Bitmap, cropRectF: RectF): Bitmap {
+    val resultBitmap = Bitmap.createBitmap(
+        cropRectF.width().toInt(),
+        cropRectF.height().toInt(),
+        Bitmap.Config.ARGB_8888
+    )
+    val cavas = Canvas(resultBitmap)
+
+    val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+    paint.color = Color.WHITE
+    cavas.drawRect(
+        RectF(0f, 0f, cropRectF.width(), cropRectF.height()),
+        paint
+    )
+
+    val matrix = Matrix()
+    matrix.postTranslate(-cropRectF.left, -cropRectF.top)
+
+    cavas.drawBitmap(source, matrix, paint)
+
+    if (source != null && !source.isRecycled) {
+        source.recycle()
+    }
+
+    return resultBitmap
+}
+
+private fun rotateBitmap(
+    bitmap: Bitmap,
+    rotationDegrees: Int,
+    flipX: Boolean,
+    flipY: Boolean
+): Bitmap {
+    val matrix = Matrix()
+    matrix.postRotate(rotationDegrees.toFloat())
+    matrix.postScale(if (flipX) -1.0f else 1.0f, if (flipY) -1.0f else 1.0f)
+    val rotatedBitmap = Bitmap.createBitmap(
+        bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+    )
+
+    if (rotatedBitmap != bitmap) {
+        bitmap.recycle()
+    }
+    return rotatedBitmap
+}
+
+private fun YUV_420_888toNV21(image: Image): ByteArray {
+    val width = image.width
+    val height = image.height
+    val ySize = width * height
+    val uvSize = width * height / 4
+
+    val nv21 = ByteArray(ySize + uvSize * 2)
+
+    val yBuffer = image.planes[0].buffer
+    val uBuffer = image.planes[1].buffer
+    val vBuffer = image.planes[2].buffer
+
+    var rowStride = image.planes[0].rowStride
+    assert(image.planes[0].pixelStride == 1)
+
+    var pos = 0
+
+    if (rowStride == width) {
+        yBuffer.get(nv21, 0, ySize)
+        pos += ySize
+    } else {
+        var yBufferPos = -rowStride.toLong()
+        while (pos < ySize) {
+            yBufferPos += rowStride
+            yBuffer.position(yBufferPos.toInt())
+            yBuffer.get(nv21, pos, width)
+            pos += width
+        }
+    }
+
+    rowStride = image.planes[2].rowStride
+    val pixelStride = image.planes[2].pixelStride
+
+    assert(rowStride == image.planes[1].rowStride)
+    assert(pixelStride == image.planes[1].pixelStride)
+
+    if (pixelStride == 2 && rowStride == width && uBuffer[0] == vBuffer[1]) {
+        val savePixel = vBuffer[1]
+        try {
+            val invertedPixel = (savePixel.toInt().inv() and 0xFF).toByte()
+            vBuffer.put(1, invertedPixel)
+            if (uBuffer[0] == invertedPixel) {
+                vBuffer.put(1, savePixel)
+                vBuffer.position(0)
+                uBuffer.position(0)
+                vBuffer.get(nv21, ySize, 1)
+                uBuffer.get(nv21, ySize + 1, uBuffer.remaining())
+
+                return nv21
+            }
+        } catch (ex: ReadOnlyBufferException) {
+        }
+
+        vBuffer.put(1, savePixel)
+    }
+
+    for (row in 0 until height / 2) {
+        for (col in 0 until width / 2) {
+            val vuPos = col * pixelStride + row * rowStride
+            nv21[pos++] = vBuffer[vuPos]
+            nv21[pos++] = uBuffer[vuPos]
+        }
+    }
+
+    return nv21
+}
+
+private fun toBitmap(image: Image): Bitmap {
+    val nv21 = YUV_420_888toNV21(image)
+
+    val yuvImage = YuvImage(
+        nv21,
+        ImageFormat.NV21,
+        image.width,
+        image.height,
+        null
+    )
+
+    val out = ByteArrayOutputStream()
+    yuvImage.compressToJpeg(
+        Rect(0, 0, yuvImage.width, yuvImage.height),
+        75,
+        out
+    )
+
+    val imageBytes = out.toByteArray()
+
+    return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+}

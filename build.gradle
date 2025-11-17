@@ -14,10 +14,7 @@ buildscript {
 }
 
 allprojects {
-    repositories {
-        google()
-        jcenter()
-    }
+    // Repositories are now managed in settings.gradle via dependencyResolutionManagement
 }
 
 task clean(type: Delete) {
