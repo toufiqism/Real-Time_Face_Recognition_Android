@@ -18,4 +18,5 @@ dependencyResolutionManagement {
 }
 
 include ':app'
+include ':shared'
 rootProject.name = "Face Recognition"

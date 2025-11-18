@@ -83,7 +83,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.atharvakale.facerecognition.kmp.toFaceProfiles
+import com.atharvakale.facerecognition.kmp.toRecognitionMap
+import com.atharvakale.facerecognition.shared.controller.FaceRecognitionController
+import com.atharvakale.facerecognition.shared.di.AndroidSharedModule
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -91,6 +98,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetector
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import kotlinx.coroutines.launch
 import org.tensorflow.lite.Interpreter
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
@@ -116,12 +124,32 @@ class MainActivity : ComponentActivity() {
     private lateinit var tfLite: Interpreter
     private var cameraProvider: ProcessCameraProvider? = null
     private val registered = HashMap<String, SimilarityClassifier.Recognition>() // saved Faces
+    private lateinit var recognitionController: FaceRecognitionController
 
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        registered.putAll(readFromSP()) // Load saved faces from memory when app starts
+        val legacyRecognitions = legacyReadRecognitions()
+        registered.putAll(legacyRecognitions) // Load saved faces from memory when app starts
         Log.d(TAG, "onCreate: loaded recognitions count=${registered.size}")
+
+        recognitionController = AndroidSharedModule.controller(this)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                recognitionController.state.collect { state ->
+                    val updated = state.faces.toRecognitionMap()
+                    if (updated != registered) {
+                        registered.clear()
+                        registered.putAll(updated)
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            if (legacyRecognitions.isNotEmpty()) {
+                recognitionController.replaceFaces(legacyRecognitions.toFaceProfiles())
+            }
+        }
 
         // Load model
         try {
@@ -143,7 +171,7 @@ class MainActivity : ComponentActivity() {
                     detector = detector,
                     tfLite = tfLite,
                     registered = registered,
-                    onRegisteredChanged = { registered.putAll(it) },
+                    onRegisteredChanged = { persistRecognitions(it) },
                     onCameraProviderReady = { cameraProvider = it },
                     cameraProvider = cameraProvider
                 )
@@ -162,34 +190,8 @@ class MainActivity : ComponentActivity() {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
-    // Save Faces to Shared Preferences.Conversion of Recognition objects to json string
-    private fun insertToSP(jsonMap: HashMap<String, SimilarityClassifier.Recognition>, mode: Int) {
-        val mapToSave = when (mode) {
-            1 -> { // mode: 0:save all, 1:clear all, 2:update all
-                jsonMap.clear()
-                jsonMap
-            }
-            0 -> {
-                val existing = readFromSP()
-                existing.putAll(jsonMap)
-                existing
-            }
-            else -> jsonMap
-        }
-        val jsonString = Gson().toJson(mapToSave)
-        val sharedPreferences = getSharedPreferences("HashMap", MODE_PRIVATE)
-        val editor = sharedPreferences.edit()
-        editor.putString("map", jsonString)
-        editor.apply()
-        Log.d(
-            TAG,
-            "insertToSP: mode=$mode savedCount=${mapToSave.size} jsonLength=${jsonString.length}"
-        )
-        Toast.makeText(this, "Recognitions Saved", Toast.LENGTH_SHORT).show()
-    }
-
     // Load Faces from Shared Preferences.Json String to Recognition object
-    private fun readFromSP(): HashMap<String, SimilarityClassifier.Recognition> {
+    private fun legacyReadRecognitions(): HashMap<String, SimilarityClassifier.Recognition> {
         val sharedPreferences = getSharedPreferences("HashMap", MODE_PRIVATE)
         val defValue = Gson().toJson(HashMap<String, SimilarityClassifier.Recognition>())
         val json = sharedPreferences.getString("map", defValue) ?: defValue
@@ -215,10 +217,47 @@ class MainActivity : ComponentActivity() {
         }
         Log.d(
             TAG,
-            "readFromSP: retrievedCount=${retrievedMap.size} rawJsonLength=${json.length} rawjson: $json"
+            "legacyReadRecognitions: retrievedCount=${retrievedMap.size} rawJsonLength=${json.length}"
         )
         Toast.makeText(this, "Recognitions Loaded", Toast.LENGTH_SHORT).show()
         return retrievedMap
+    }
+
+    fun persistRecognitions(map: HashMap<String, SimilarityClassifier.Recognition>) {
+        val snapshot = HashMap(map)
+        registered.clear()
+        registered.putAll(snapshot)
+        lifecycleScope.launch {
+            recognitionController.replaceFaces(snapshot.toFaceProfiles())
+        }
+    }
+
+    fun loadRecognitions(): HashMap<String, SimilarityClassifier.Recognition> {
+        return recognitionController.state.value.faces.toRecognitionMap()
+    }
+
+    fun clearRecognitions() = persistRecognitions(HashMap())
+
+    fun updateDistanceThreshold(newDistance: Float) {
+        lifecycleScope.launch {
+            recognitionController.updateSettings {
+                it.copy(distanceThreshold = newDistance)
+            }
+        }
+    }
+
+    fun currentDistanceThreshold(): Float =
+        recognitionController.state.value.settings.distanceThreshold
+
+    fun currentDeveloperMode(): Boolean =
+        recognitionController.state.value.settings.developerMode
+
+    fun setDeveloperMode(enabled: Boolean) {
+        lifecycleScope.launch {
+            recognitionController.updateSettings {
+                it.copy(developerMode = enabled)
+            }
+        }
     }
 }
 
@@ -241,10 +280,9 @@ fun MainScreen(
 
     // State management
     var start by remember { mutableStateOf(true) }
-    var developerMode by remember { mutableStateOf(false) }
+    var developerMode by remember { mutableStateOf(activity.currentDeveloperMode()) }
     var distance by remember {
-        val sharedPref = context.getSharedPreferences("Distance", Context.MODE_PRIVATE)
-        mutableFloatStateOf(sharedPref.getFloat("distance", 1.00f))
+        mutableFloatStateOf(activity.currentDistanceThreshold())
     }
     var flipX by remember { mutableStateOf(false) }
     var camFace by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
@@ -624,17 +662,14 @@ fun MainScreen(
             onUpdateRecognition = { showUpdateRecognitionDialog = true },
             onSaveRecognitions = {
                 val mapToSave = HashMap(registered)
-                val jsonString = Gson().toJson(mapToSave)
-                val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
-                val editor = sharedPreferences.edit()
-                editor.putString("map", jsonString)
-                editor.apply()
+                activity.persistRecognitions(mapToSave)
                 Toast.makeText(context, "Recognitions Saved", Toast.LENGTH_SHORT).show()
                 showActionsDialog = false
             },
             onLoadRecognitions = {
-                val loaded = readFromSP(context)
+                val loaded = activity.loadRecognitions()
                 onRegisteredChanged(loaded)
+                Toast.makeText(context, "Recognitions Loaded", Toast.LENGTH_SHORT).show()
                 showActionsDialog = false
             },
             onClearRecognitions = { showClearRecognitionDialog = true },
@@ -645,6 +680,7 @@ fun MainScreen(
             onHyperparameters = { showHyperparameterSelectDialog = true },
             onDeveloperMode = {
                 developerMode = !developerMode
+                activity.setDeveloperMode(developerMode)
                 Toast.makeText(
                     context,
                     if (developerMode) "Developer Mode ON" else "Developer Mode OFF",
@@ -687,13 +723,8 @@ fun MainScreen(
                 selectedNamesForUpdate.forEach { name ->
                     registered.remove(name)
                 }
-                onRegisteredChanged(registered)
-                val mapToSave = HashMap(registered)
-                val jsonString = Gson().toJson(mapToSave)
-                val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
-                val editor = sharedPreferences.edit()
-                editor.putString("map", jsonString)
-                editor.apply()
+                val updated = HashMap(registered)
+                onRegisteredChanged(updated)
                 Toast.makeText(context, "Recognitions Updated", Toast.LENGTH_SHORT).show()
                 selectedNamesForUpdate = setOf()
                 showUpdateRecognitionDialog = false
@@ -705,12 +736,7 @@ fun MainScreen(
         ClearRecognitionDialog(
             onDismiss = { showClearRecognitionDialog = false },
             onConfirm = {
-                registered.clear()
-                val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
-                val editor = sharedPreferences.edit()
-                editor.putString("map", Gson().toJson(HashMap<String, SimilarityClassifier.Recognition>()))
-                editor.apply()
-                onRegisteredChanged(registered)
+                activity.clearRecognitions()
                 Toast.makeText(context, "Recognitions Cleared", Toast.LENGTH_SHORT).show()
                 showClearRecognitionDialog = false
             }
@@ -730,10 +756,7 @@ fun MainScreen(
             onDismiss = { showHyperparameterDialog = false },
             onUpdate = { newDistance ->
                 distance = newDistance
-                val sharedPref = context.getSharedPreferences("Distance", Context.MODE_PRIVATE)
-            val editor = sharedPref.edit()
-            editor.putFloat("distance", distance)
-            editor.apply()
+                activity.updateDistanceThreshold(newDistance)
                 Log.d("FaceRecognition", "hyperparameters: updated distance threshold=$distance")
                 showHyperparameterDialog = false
             }
@@ -1024,32 +1047,6 @@ fun HyperparameterDialog(
             }
         }
     )
-}
-
-fun readFromSP(context: Context): HashMap<String, SimilarityClassifier.Recognition> {
-    val sharedPreferences = context.getSharedPreferences("HashMap", Context.MODE_PRIVATE)
-    val defValue = Gson().toJson(HashMap<String, SimilarityClassifier.Recognition>())
-    val json = sharedPreferences.getString("map", defValue) ?: defValue
-    val token = object : TypeToken<HashMap<String, SimilarityClassifier.Recognition>>() {}
-    val retrievedMap = Gson().fromJson<HashMap<String, SimilarityClassifier.Recognition>>(
-        json,
-        token.type
-    ) ?: HashMap()
-
-    val OUTPUT_SIZE = 192
-    for ((_, recognition) in retrievedMap) {
-        val output = Array(1) { FloatArray(OUTPUT_SIZE) }
-        var arrayList = recognition.extra as? ArrayList<*>
-        arrayList = arrayList?.get(0) as? ArrayList<*>
-        if (arrayList != null) {
-            for (counter in arrayList.indices) {
-                output[0][counter] = (arrayList[counter] as? Double)?.toFloat() ?: 0f
-            }
-        }
-        recognition.extra = output
-    }
-    Toast.makeText(context, "Recognitions Loaded", Toast.LENGTH_SHORT).show()
-    return retrievedMap
 }
 
 fun handleImageSelection(

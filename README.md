@@ -49,6 +49,38 @@ The app has been fully migrated from XML layouts to Jetpack Compose:
 - All business logic preserved (face detection, recognition, TensorFlow Lite integration)
 - Camera functionality maintained with Compose integration
 
+## Kotlin Multiplatform Setup
+
+The project now follows a Kotlin Multiplatform (KMP) structure to keep business logic shared while UI stays per-platform.
+
+### Module layout
+- `shared/`: Multiplatform library
+  - `commonMain/` – platform-agnostic contracts (`FaceRecognitionController`, `FaceRepository`, `RecognitionSettingsRepository`, `PermissionsManager`, `FaceAnalyzer`, `RecognitionSettings`, etc.) implemented with coroutines + StateFlow for SSOT.
+  - `androidMain/` – Android actuals (`SharedPreferencesFaceRepository`, `SharedPreferencesRecognitionSettingsRepository`, `AndroidPermissionsManager`, `AndroidSharedModule`, stub `provideFaceAnalyzer`) that reuse existing ML Kit + CameraX stacks.
+  - `iosMain/` – placeholder actuals so iOS builds can be enabled later without breaking compilation.
+- `app/`: Android UI module (Jetpack Compose) now depends on `:shared` and delegates persistence/settings/permission orchestration to the shared controller exposed by `AndroidSharedModule.controller(activity)`.
+
+### Shared state orchestration
+- `FaceRecognitionController` exposes `state: StateFlow<FaceRegistryState>` and `events: SharedFlow<FaceRegistryEvent)` for a unidirectional data flow across Compose screens.
+- Domain use cases encapsulate storage + settings mutations (`RegisterFaceUseCase`, `LoadFacesUseCase`, `ReplaceFacesUseCase`, `UpdateSettingsUseCase`, etc.).
+- Android UI interacts with the controller via helper functions (`persistRecognitions`, `loadRecognitions`, `updateDistanceThreshold`, `setDeveloperMode`) which keeps Compose state and the shared repository in sync.
+
+### Building / verifying
+```bash
+./gradlew shared:assemble    # build shared module (android + stubs for iOS)
+./gradlew app:assembleDebug  # build Android app with shared logic
+```
+Set `kotlin.native.ignoreDisabledTargets=true` (already in `gradle.properties`) on non-macOS hosts to silence iOS warnings.
+
+### Future iOS work
+To finish iOS support, implement the pending actuals inside `shared/src/iosMain/`:
+- `provideFaceAnalyzer` backed by Vision or TensorFlowLiteSwift and ensure ML models are embedded as xcassets.
+- A `FaceRepository` implementation powered by `NSUserDefaults`/CoreData for parity with Android `SharedPreferences`.
+- A `RecognitionSettingsRepository` that surfaces camera/performance flags across different screen sizes (consider SwiftUI or Compose Multiplatform UI layers).
+- Camera permission management via `AVAuthorizationStatus` and gracefully handling multi-orientation previews.
+
+Compose screens are already responsive, but when building iOS/large-screen variants ensure layout modifiers use `Modifier.fillMaxSize()` plus adaptive paddings so both phone/tablet breakpoints remain consistent.
+
 ## Installation
 
 Use Import from Version Control in Android Studio or Clone repo and open the project in Android Studio.
