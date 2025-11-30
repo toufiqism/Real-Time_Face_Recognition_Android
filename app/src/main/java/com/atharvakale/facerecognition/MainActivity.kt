@@ -27,8 +27,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.annotation.RequiresApi
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -222,6 +224,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun MainScreen(
     activity: MainActivity,
@@ -1109,6 +1112,7 @@ fun getBitmapFromUri(context: Context, uri: Uri): Bitmap {
     return image ?: throw IOException("Failed to decode bitmap from URI")
 }
 
+@ExperimentalGetImage
 fun bindCamera(
     context: Context,
     lifecycleOwner: LifecycleOwner,
@@ -1207,7 +1211,7 @@ fun bindCamera(
                             )
                         }
                         } else {
-                            if (registered.isEmpty())
+                        if (registered.isEmpty())
                             onRecoNameChanged("Add Face")
                         else
                             onRecoNameChanged("No Face Detected!")
@@ -1276,7 +1280,7 @@ fun recognizeImage(
         for (i in 0 until inputSize) {
             for (j in 0 until inputSize) {
             val pixelValue = intValues[i * inputSize + j]
-                if (isModelQuantized) {
+            if (isModelQuantized) {
                     imgData.put(((pixelValue shr 16) and 0xFF).toByte())
                     imgData.put(((pixelValue shr 8) and 0xFF).toByte())
                     imgData.put((pixelValue and 0xFF).toByte())
@@ -1302,7 +1306,7 @@ fun recognizeImage(
         if (registered.isNotEmpty()) {
         val nearest = findNearest(embeedings[0], registered)
 
-            if (nearest.isNotEmpty() && nearest[0] != null) {
+        if (nearest.isNotEmpty() && nearest[0] != null) {
             val name = nearest[0].first
                 distance_local = nearest[0].second
 
