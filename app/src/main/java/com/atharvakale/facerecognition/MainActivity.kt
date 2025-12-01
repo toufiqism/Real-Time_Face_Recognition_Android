@@ -29,7 +29,6 @@ import android.util.Log
 import android.util.Pair
 import android.util.Size
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -39,6 +38,9 @@ import androidx.annotation.NonNull
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -92,10 +94,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var reco_name: TextView
     private lateinit var preview_info: TextView
     private lateinit var textAbove_preview: TextView
-    private lateinit var recognize: Button
-    private lateinit var camera_switch: Button
-    private lateinit var actions: Button
+    private lateinit var recognize: MaterialButton
+    private lateinit var camera_switch: MaterialButton
+    private lateinit var actions: MaterialButton
     private lateinit var add_face: ImageButton
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var instructionsFab: FloatingActionButton
     private lateinit var cameraSelector: CameraSelector
     private var developerMode = false
     private var distance = 1.0f
@@ -119,12 +123,17 @@ class MainActivity : AppCompatActivity() {
         registered.putAll(readFromSP()) // Load saved faces from memory when app starts
         Log.d(TAG, "onCreate: loaded recognitions count=${registered.size}")
         setContentView(R.layout.activity_main)
-        
+
+        // Setup Toolbar
+        toolbar = findViewById(R.id.toolbar)
+        setSupportActionBar(toolbar)
+
         face_preview = findViewById(R.id.imageView)
         reco_name = findViewById(R.id.textView)
         preview_info = findViewById(R.id.textView2)
         textAbove_preview = findViewById(R.id.textAbovePreview)
         add_face = findViewById(R.id.imageButton)
+        instructionsFab = findViewById(R.id.fabInstructions)
         add_face.visibility = View.INVISIBLE
 
         val sharedPref = getSharedPreferences("Distance", Context.MODE_PRIVATE)
@@ -135,7 +144,7 @@ class MainActivity : AppCompatActivity() {
         recognize = findViewById(R.id.button3)
         camera_switch = findViewById(R.id.button5)
         actions = findViewById(R.id.button2)
-        textAbove_preview.text = "Recognized Face:"
+        textAbove_preview.text = getString(R.string.label_recognized_face)
 
         // Camera Permission
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -143,6 +152,18 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "onCreate: requested camera permission")
         } else {
             Log.d(TAG, "onCreate: camera permission already granted")
+        }
+
+        // Instructions FAB
+        instructionsFab.setOnClickListener {
+            val message = preview_info.text?.toString()?.takeIf { it.isNotBlank() }
+                ?: "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
+
+            AlertDialog.Builder(context)
+                .setTitle(getString(R.string.label_recognized_face))
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show()
         }
 
         // On-screen Action Button
@@ -205,7 +226,7 @@ class MainActivity : AppCompatActivity() {
         recognize.setOnClickListener {
             if (recognize.text.toString() == "Recognize") {
                 start = true
-                textAbove_preview.text = "Recognized Face:"
+                textAbove_preview.text = getString(R.string.label_recognized_face)
                 recognize.text = "Add Face"
                 add_face.visibility = View.INVISIBLE
                 reco_name.visibility = View.VISIBLE
@@ -218,8 +239,8 @@ class MainActivity : AppCompatActivity() {
                 add_face.visibility = View.VISIBLE
                 reco_name.visibility = View.INVISIBLE
                 face_preview.visibility = View.VISIBLE
-                preview_info.text =
-                    "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
+//                preview_info.text =
+//                    "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
                 Log.d(TAG, "recognize button: switched to add-face mode")
             }
         }
@@ -992,8 +1013,8 @@ class MainActivity : AppCompatActivity() {
                                     add_face.visibility = View.VISIBLE
                                     reco_name.visibility = View.INVISIBLE
                                     face_preview.visibility = View.VISIBLE
-                                    preview_info.text =
-                                        "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
+//                                    preview_info.text =
+//                                        "1.Bring Face in view of Camera.\n\n2.Your Face preview will appear here.\n\n3.Click Add button to save face."
                                     val face = faces[0]
 
                                     // write code to recreate bitmap from source

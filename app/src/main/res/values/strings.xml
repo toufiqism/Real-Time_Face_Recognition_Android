@@ -9,4 +9,22 @@
 
     <string name="hello_first_fragment">Hello first fragment</string>
     <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
+
+    <!-- Login screen -->
+    <string name="login_title">DMP Duty Distribution</string>
+    <string name="login_subtitle">Please enter your account here</string>
+    <string name="hint_bp_id">BP ID</string>
+    <string name="hint_password">Password</string>
+    <string name="btn_login">Login</string>
+    <string name="btn_go_to_feature">Go to Face Recognition</string>
+    <string name="error_bp_required">BP ID is required</string>
+    <string name="error_password_required">Password is required</string>
+    <string name="toast_login_success">Logged in. Redirecting…</string>
+
+    <!-- Main screen -->
+    <string name="toolbar_title">Face Recognition</string>
+    <string name="btn_add_face">Add Face</string>
+    <string name="btn_actions">Actions</string>
+    <string name="hint_add_face">Add Face</string>
+    <string name="label_recognized_face">Recognized Face:</string>
 </resources>

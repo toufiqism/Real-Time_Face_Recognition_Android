@@ -7,4 +7,14 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Login screen palette -->
+    <color name="brand_primary">#00766C</color>
+    <color name="brand_primary_dark">#00574F</color>
+    <color name="login_background">#F8FAFF</color>
+    <color name="text_muted">#A0A4B8</color>
+    <color name="input_hint">#B9BED2</color>
+    <color name="input_stroke">#D0D4E2</color>
+    <color name="button_secondary_bg">#E3F2EE</color>
+    <color name="button_secondary_text">#056C62</color>
 </resources>

@@ -11,6 +11,22 @@ A minimalistic Face Recognition module which can be easily incorporated in any A
 - Real-Time and offline.
 - Simple UI.
 
+## Onboarding Experience
+- Brand-new login screen modeled after the DMP Duty Distribution mockups keeps the crest (`dmp_logo.jpg`), typography, and spacing faithful to the design while using Material text fields for accessibility.
+- A dedicated **Go to Face Recognition** button sits right beneath the Login button so power users can jump straight into the camera workflow without entering credentials.
+- Login inputs now have comfortable horizontal padding and a softer hint color so labels remain legible without clashing with borders or background.
+
+## Modern UI Theme
+- The entire app now uses a consistent **DMP teal** (`#00766C`) brand color across all screens.
+- **Material Toolbar** added to the main activity for a modern look with the app title.
+- Camera preview and face preview are now wrapped in **CardView** containers with rounded corners and elevation for a polished appearance.
+- All buttons use **MaterialButton** with consistent styling (filled primary, outlined secondary).
+- Status bar color matches the brand theme for a cohesive experience.
+
+## In-app Help
+- The main face-recognition screen includes a floating **instructions** action button in the bottom-right corner.
+- Tapping this FAB opens a dialog that shows the same step-by-step guidance text that is bound to `textView2`, so you can keep inline hints while also providing a focused popup for users who need help.
+
 ## Tools and Frameworks used:
 - Android Studio (Kotlin)
 - CameraX
