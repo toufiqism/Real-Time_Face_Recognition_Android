@@ -56,21 +56,24 @@
         android:hint="@string/hint_bp_id"
         app:boxStrokeColor="@color/input_stroke"
         app:boxStrokeWidth="1dp"
+        app:counterTextColor="@color/input_hint"
         app:hintTextColor="@color/input_hint"
-        app:startIconDrawable="@drawable/ic_bp_id"
-        app:startIconTint="@color/text_muted"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/textSubtitle">
+        app:layout_constraintTop_toBottomOf="@id/textSubtitle"
+        app:placeholderTextColor="@color/input_hint"
+        app:startIconDrawable="@drawable/ic_bp_id"
+        app:startIconTint="@color/text_muted">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/inputBpId"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:hint="@string/hint_bp_id"
             android:inputType="text"
             android:maxLines="1"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
             android:textColor="@color/black"
             android:textColorHint="@color/input_hint" />
     </com.google.android.material.textfield.TextInputLayout>
@@ -86,20 +89,21 @@
         app:boxStrokeWidth="1dp"
         app:endIconMode="password_toggle"
         app:hintTextColor="@color/input_hint"
-        app:startIconDrawable="@drawable/ic_lock_outline"
-        app:startIconTint="@color/text_muted"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/layoutBpId">
+        app:layout_constraintTop_toBottomOf="@id/layoutBpId"
+        app:startIconDrawable="@drawable/ic_lock_outline"
+        app:startIconTint="@color/text_muted">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/inputPassword"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
+            android:hint="@string/hint_password"
             android:inputType="textPassword"
             android:maxLines="1"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
             android:textColor="@color/black"
             android:textColorHint="@color/input_hint" />
     </com.google.android.material.textfield.TextInputLayout>
@@ -111,14 +115,14 @@
         android:layout_marginTop="8dp"
         android:text="@string/btn_login"
         android:textAllCaps="false"
+        android:textColor="@color/white"
         android:textSize="16sp"
         android:textStyle="bold"
-        android:textColor="@color/white"
+        app:backgroundTint="@color/brand_primary"
         app:cornerRadius="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/layoutPassword"
-        app:backgroundTint="@color/brand_primary" />
+        app:layout_constraintTop_toBottomOf="@id/layoutPassword" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonGoToFeature"
@@ -128,8 +132,8 @@
         android:layout_marginTop="12dp"
         android:text="@string/btn_go_to_feature"
         android:textAllCaps="false"
-        android:textSize="16sp"
         android:textColor="@color/brand_primary"
+        android:textSize="16sp"
         app:backgroundTint="@android:color/transparent"
         app:cornerRadius="4dp"
         app:layout_constraintEnd_toEndOf="parent"
