@@ -11,9 +11,10 @@
     <!-- Login screen palette -->
     <color name="brand_primary">#00766C</color>
     <color name="brand_primary_dark">#00574F</color>
-    <color name="login_background">#F8FAFF</color>
+    <color name="login_background">#FFFFFF</color>
     <color name="text_muted">#A0A4B8</color>
-    <color name="input_hint">#B9BED2</color>
+    <!-- Slightly darker so hints stay readable on light background -->
+    <color name="input_hint">#6E738A</color>
     <color name="input_stroke">#D0D4E2</color>
     <color name="button_secondary_bg">#E3F2EE</color>
     <color name="button_secondary_text">#056C62</color>
